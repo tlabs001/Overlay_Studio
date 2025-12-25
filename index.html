@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Overlay Studio</title>
+  <link rel="icon" type="image/png" href="/public/icons/app-icon.png" />
+  <link rel="manifest" href="/public/manifest.json" />
+  <link rel="apple-touch-icon" href="/public/icons/app-icon.png" />
+  <link rel="stylesheet" href="src/styles/main.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div class="title-wrap">
+        <h1 class="app-title">Overlay Studio</h1>
+        <p class="app-subtitle">T LABS LLC 2025</p>
+      </div>
+      <div class="theme-toggle" role="group" aria-label="Theme toggle">
+        <button id="darkBtn" class="toggle-btn" type="button">Dark</button>
+        <button id="lightBtn" class="toggle-btn" type="button">Light</button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside id="toolsPanel" class="tools-panel open" aria-label="Tools panel">
+        <div class="panel-grip" aria-hidden="true"></div>
+
+        <div class="panel-section">
+          <div class="section-title">Image sources</div>
+          <div class="upload-row">
+            <label class="upload-tile" data-upload-target="reference">
+              <span class="upload-label">Reference photo</span>
+              <input id="referenceUpload" type="file" accept="image/*" />
+            </label>
+            <label class="upload-tile" data-upload-target="drawing">
+              <span class="upload-label">Drawing</span>
+              <input id="drawingUpload" type="file" accept="image/*" />
+            </label>
+          </div>
+          <div class="dual-upload" id="dualUploadZone" data-upload-target="both">
+            <div class="dual-upload__header">
+              <span class="dual-upload__title">Upload both images</span>
+              <span class="dual-upload__hint">Drop two files or pick from your computer</span>
+            </div>
+            <button class="dual-upload__button" type="button" id="dualUploadButton">Choose files</button>
+            <input id="dualUploadInput" type="file" accept="image/*" multiple />
+          </div>
+          <div class="thumb-grid">
+            <div class="image-thumb" id="referenceThumb" aria-label="Reference thumbnail" data-upload-target="reference">
+              <img id="referenceThumbImage" alt="Reference preview" />
+              <span class="thumb-placeholder">Reference preview</span>
+            </div>
+            <div class="image-thumb" id="drawingThumb" aria-label="Drawing thumbnail" data-upload-target="drawing">
+              <img id="drawingThumbImage" alt="Drawing preview" />
+              <span class="thumb-placeholder">Drawing preview</span>
+            </div>
+            <div class="image-thumb" id="overlayThumbWrapper" aria-label="Overlay thumbnail">
+              <img id="overlayThumb" alt="Overlay preview" />
+              <span class="thumb-placeholder">Overlay preview</span>
+            </div>
+          </div>
+          <div class="difference-summary" id="differenceSummary">Load both images to analyze differences.</div>
+          <div class="sidebar-actions">
+            <button id="diffTool" class="primary-btn" type="button">Analyze differences</button>
+            <button id="saveOverlay" class="ghost-btn" type="button">Save overlay</button>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-title">Overlay tools</div>
+          <div class="tool-subsection collapsed">
+            <button class="subsection-header" type="button" aria-expanded="false">
+              <div class="subsection-label">Session</div>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div class="subsection-body" aria-hidden="true">
+              <div class="tools-grid">
+                <button id="uploadTool" class="tool-chip" type="button">Import Session</button>
+                <button id="alignTool" class="tool-chip" type="button">Save Session</button>
+                <button id="loadSessionTool" class="tool-chip" type="button">Load Saved Session</button>
+              </div>
+            </div>
+          </div>
+          <div class="tool-subsection collapsed">
+            <button class="subsection-header" type="button" aria-expanded="false">
+              <div class="subsection-label">Measurements</div>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div class="subsection-body" aria-hidden="true">
+              <div class="tools-grid">
+                <button id="measureTool" class="tool-chip" type="button">Measure</button>
+                <button id="baseUnitObjectTool" class="tool-chip" type="button">Base Unit Object</button>
+                <button id="setBaseUnitTool" class="tool-chip" type="button">Set Base Unit</button>
+                <button id="undoMeasureTool" class="tool-chip" type="button">Undo</button>
+                <button id="clearMeasureTool" class="tool-chip" type="button">Clear</button>
+                <button id="sightSizeGridTool" class="tool-chip" type="button">Sight-Size Grid</button>
+                <button id="gridTool" class="tool-chip" type="button">Grid</button>
+              </div>
+            </div>
+          </div>
+          <div class="tool-subsection collapsed">
+            <button class="subsection-header" type="button" aria-expanded="false">
+              <div class="subsection-label">Brush tools</div>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div class="subsection-body" aria-hidden="true">
+              <div class="tools-grid">
+                <button id="brushToolButton" class="tool-chip" type="button">Brush</button>
+                <button id="eraserToolButton" class="tool-chip" type="button">Eraser</button>
+                <button id="brushSizeUpTool" class="tool-chip" type="button">Brush Size +</button>
+                <button id="brushSizeDownTool" class="tool-chip" type="button">Brush Size -</button>
+                <button id="undoBrushTool" class="tool-chip" type="button">Undo Brush</button>
+                <button id="clearBrushTool" class="tool-chip" type="button">Clear Brush</button>
+              </div>
+            </div>
+          </div>
+          <div class="tool-subsection collapsed">
+            <button class="subsection-header" type="button" aria-expanded="false">
+              <div class="subsection-label">Overlay &amp; guides</div>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div class="subsection-body" aria-hidden="true">
+              <div class="tools-grid">
+                <button id="ghostTool" class="tool-chip" type="button">Ghost</button>
+                <button id="traceTool" class="tool-chip" type="button">Trace</button>
+                <button id="refOutlineTool" class="tool-chip" type="button">Ref Outline</button>
+                <button id="drawOutlineTool" class="tool-chip" type="button">Draw Outline</button>
+                <button id="bothOutlineTool" class="tool-chip" type="button">Both Outlines</button>
+                <button id="baseUnitOutlineTool" class="tool-chip" type="button">Base Unit Outline</button>
+                <button id="baseUnitDrawingToggleTool" class="tool-chip" type="button">Toggle Drawing in Base Mode</button>
+                <button id="negativeSpaceTool" class="tool-chip" type="button">Negative Space</button>
+                <button id="simplifyShapesTool" class="tool-chip" type="button">Simplify Shapes</button>
+                <button id="trainingModeTool" class="tool-chip" type="button">Training Mode</button>
+                <button id="normalViewTool" class="tool-chip" type="button">Normal View</button>
+              </div>
+            </div>
+          </div>
+          <div class="tool-subsection collapsed">
+            <button class="subsection-header" type="button" aria-expanded="false">
+              <div class="subsection-label">Perspective</div>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div class="subsection-body" aria-hidden="true">
+              <div class="tools-grid">
+                <button id="onePointTool" class="tool-chip" type="button">1-Point</button>
+                <button id="twoPointTool" class="tool-chip" type="button">2-Point</button>
+                <button id="threePointTool" class="tool-chip" type="button">3-Point</button>
+                <button id="clearPerspectiveTool" class="tool-chip" type="button">Clear Perspective</button>
+              </div>
+            </div>
+          </div>
+          <div class="tool-subsection collapsed">
+            <button class="subsection-header" type="button" aria-expanded="false">
+              <div class="subsection-label">Analysis</div>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div class="subsection-body" aria-hidden="true">
+              <div class="tools-grid">
+                <button id="faceTool" class="tool-chip" type="button">Face</button>
+                <button id="bodyTool" class="tool-chip" type="button">Body</button>
+                <button id="critiqueTool" class="tool-chip" type="button">Critique</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <div class="section-title">Alignment</div>
+          <div class="tool-subsection">
+            <button class="subsection-header" type="button" aria-expanded="true">
+              <div class="subsection-label">Alignment controls</div>
+              <span class="chevron" aria-hidden="true"></span>
+            </button>
+            <div class="subsection-body">
+              <p class="section-hint">Auto-align on upload, then drag the drawing on the canvas or scroll to resize it.</p>
+              <div class="tools-grid align-grid">
+                <button id="autoAlignTool" class="tool-chip" type="button">Auto Align</button>
+                <button id="resetAlignTool" class="tool-chip" type="button">Reset Align</button>
+                <button id="moveUpTool" class="tool-chip" type="button">Move Up</button>
+                <button id="moveDownTool" class="tool-chip" type="button">Move Down</button>
+                <button id="moveLeftTool" class="tool-chip" type="button">Move Left</button>
+                <button id="moveRightTool" class="tool-chip" type="button">Move Right</button>
+                <button id="scaleUpTool" class="tool-chip" type="button">Scale Up</button>
+                <button id="scaleDownTool" class="tool-chip" type="button">Scale Down</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="canvas-stage">
+        <div class="preview-strip">
+          <div class="preview-card">
+            <div class="preview-label">Reference</div>
+            <div class="preview-window" id="referencePreview"></div>
+          </div>
+          <div class="preview-card">
+            <div class="preview-label">Drawing</div>
+            <div class="preview-window" id="drawingPreview"></div>
+          </div>
+          <div class="preview-card">
+            <div class="preview-label">Overlay</div>
+            <div class="preview-window" id="overlayPreview"></div>
+          </div>
+        </div>
+        <main id="canvas-container">
+          <div id="canvasPlaceholder" class="canvas-placeholder">
+            <div class="placeholder-card">
+              <div class="placeholder-title">Ready to overlay</div>
+              <p class="placeholder-body">Drop in your reference and drawing images to see them combined here in real-time.</p>
+              <ul class="placeholder-list">
+                <li>Use the upload tiles on the left or drag files directly onto the canvas.</li>
+                <li>Try the analysis tools to highlight outlines, grids, and differences.</li>
+                <li>Switch themes any time with the buttons in the header.</li>
+              </ul>
+            </div>
+          </div>
+          <canvas id="overlayCanvas"></canvas>
+        </main>
+      </section>
+    </div>
+
+    <button id="fabBtn" class="fab" type="button" aria-label="Open tools">+</button>
+  </div>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "Overlay Mobile Studio",
+  "short_name": "Overlay",
+  "description": "Draw, measure, and critique on the go with offline and installable support.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "icons/app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
