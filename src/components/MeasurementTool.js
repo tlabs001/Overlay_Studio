@@ -409,6 +409,38 @@ export class MeasurementTool {
     const { start, end, normal, direction, totalLength } = this.getRulerGeometry();
     const ctx = this.ctx;
 
+    const actualDistance = Math.hypot(end.x - start.x, end.y - start.y);
+    if (Math.abs(actualDistance - totalLength) > 0.5) {
+      console.warn('MeasurementTool: ruler length mismatch detected', {
+        expected: totalLength,
+        measured: actualDistance,
+      });
+    }
+
+    const colors = {
+      quarter: '#60a5fa',
+      third: '#a855f7',
+      integer: '#22c55e',
+    };
+
+    const tickLengths = {
+      quarter: 12,
+      quarterAccent: 16,
+      third: 14,
+      integer: 20,
+    };
+
+    const tickWidths = {
+      quarter: 1.6,
+      third: 1.8,
+      integer: 2.4,
+    };
+
+    const isApproximately = (value, target, epsilon = 1e-4) =>
+      Math.abs(value - target) < epsilon;
+
+    const isInteger = (value) => isApproximately(value, Math.round(value));
+
     const drawTick = (units, style = {}) => {
       const offset = unit * units;
       const basePoint = {
@@ -439,26 +471,37 @@ export class MeasurementTool {
     ctx.lineTo(end.x, end.y);
     ctx.stroke();
 
-    const tickDefs = [
-      { step: 0.25, color: '#60a5fa', width: 1.5, length: 10, label: '0.25' },
-      { step: 1 / 3, color: '#a855f7', width: 1.6, length: 10, label: '0.33' },
-      { step: 0.5, color: '#f59e0b', width: 2, length: 12, label: '0.5' },
-      { step: 1, color: '#22c55e', width: 2.4, length: 14, label: '1' },
-      { step: 2, color: '#38bdf8', width: 2.8, length: 16, label: '2' },
-      { step: 3, color: '#f97316', width: 3, length: 16, label: '3' },
-      { step: 4, color: '#e11d48', width: 3.2, length: 16, label: '4' },
-      { step: 5, color: '#0ea5e9', width: 3.2, length: 16, label: '5' },
-      { step: 6, color: '#94a3b8', width: 3.4, length: 16, label: '6' },
-    ];
+    const maxUnits = this.unitRuler.lengthInUnits || 6;
 
-    drawTick(0, { color: '#e2e8f0', width: 3, length: 18, label: '0' });
+    drawTick(0, { color: colors.integer, width: tickWidths.integer, length: tickLengths.integer, label: '0' });
 
-    tickDefs.forEach((def) => {
-      const maxUnits = this.unitRuler.lengthInUnits || 6;
-      for (let u = def.step; u <= maxUnits + 0.001; u += def.step) {
-        drawTick(u, def);
-      }
-    });
+    for (let integerTick = 1; integerTick <= maxUnits + 0.001; integerTick += 1) {
+      drawTick(integerTick, {
+        color: colors.integer,
+        width: tickWidths.integer,
+        length: tickLengths.integer,
+        label: `${integerTick}`,
+      });
+    }
+
+    for (let thirdTick = 1 / 3; thirdTick <= maxUnits + 0.001; thirdTick += 1 / 3) {
+      if (isInteger(thirdTick)) continue;
+      drawTick(thirdTick, {
+        color: colors.third,
+        width: tickWidths.third,
+        length: tickLengths.third,
+      });
+    }
+
+    for (let quarterTick = 0.25; quarterTick <= maxUnits + 0.001; quarterTick += 0.25) {
+      if (isInteger(quarterTick)) continue;
+      const isHalfStep = isApproximately(quarterTick % 0.5, 0);
+      drawTick(quarterTick, {
+        color: colors.quarter,
+        width: tickWidths.quarter,
+        length: isHalfStep ? tickLengths.quarterAccent : tickLengths.quarter,
+      });
+    }
 
     const rotateHandle = this.getRotateHandle();
     ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
