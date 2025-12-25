@@ -89,9 +89,6 @@ const initializeApp = () => {
   const lightBtn = document.getElementById('lightBtn');
   const referenceUpload = document.getElementById('referenceUpload');
   const drawingUpload = document.getElementById('drawingUpload');
-  const dualUploadZone = document.getElementById('dualUploadZone');
-  const dualUploadInput = document.getElementById('dualUploadInput');
-  const dualUploadButton = document.getElementById('dualUploadButton');
   const referenceThumb = document.getElementById('referenceThumb');
   const drawingThumb = document.getElementById('drawingThumb');
   const overlayThumb = document.getElementById('overlayThumb');
@@ -307,21 +304,6 @@ const initializeApp = () => {
       }
     };
 
-  const handleCombinedUpload = async (files = []) => {
-    const fileArray = Array.from(files).filter((file) => file && isImageFile(file));
-    if (!fileArray.length) return;
-
-    const [first, second] = fileArray;
-    if (first) {
-      await handleImageUpload(first, 'reference');
-    }
-    if (second) {
-      await handleImageUpload(second, 'drawing');
-    } else if (!canvasManager.drawingImage && canvasManager.referenceImage && first !== undefined) {
-      await handleImageUpload(first, 'drawing');
-    }
-  };
-
   const attachUploadDropTarget = (element, target, fileNormalizer = (list) => Array.from(list || [])) => {
     if (!element || !target) return;
 
@@ -343,12 +325,16 @@ const initializeApp = () => {
       event.preventDefault();
       clearHighlight();
       const files = fileNormalizer(event.dataTransfer?.items || event.dataTransfer?.files || []);
-      if (target === 'both') {
-        await handleCombinedUpload(files);
-      } else {
-        const [file] = files;
-        await handleImageUpload(file, target);
+      const [file] = files;
+      if (!file) return;
+
+      if (target === 'auto') {
+        const assignedTarget = canvasManager.referenceImage ? 'drawing' : 'reference';
+        await handleImageUpload(file, assignedTarget);
+        return;
       }
+
+      await handleImageUpload(file, target);
     });
   };
 
@@ -504,7 +490,7 @@ const initializeApp = () => {
 
   const canvasContainer = document.getElementById('canvas-container');
   if (canvasContainer) {
-    attachUploadDropTarget(canvasContainer, 'both', normalizeFileList);
+    attachUploadDropTarget(canvasContainer, 'auto', normalizeFileList);
   }
 
   if (referenceUpload) {
@@ -521,31 +507,6 @@ const initializeApp = () => {
       await handleImageUpload(file, 'drawing');
       drawingUpload.value = '';
     });
-  }
-
-  if (dualUploadInput) {
-    dualUploadInput.addEventListener('change', async (event) => {
-      await handleCombinedUpload(event.target.files || []);
-      dualUploadInput.value = '';
-    });
-  }
-
-  if (dualUploadButton && dualUploadInput) {
-    dualUploadButton.addEventListener('click', () => dualUploadInput.click());
-  }
-
-  if (dualUploadZone) {
-    dualUploadZone.addEventListener('click', (event) => {
-      if (event.target === dualUploadButton) return;
-      dualUploadInput?.click?.();
-    });
-    dualUploadZone.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        dualUploadInput?.click?.();
-      }
-    });
-    dualUploadZone.setAttribute('tabindex', '0');
   }
 
   if (saveOverlayBtn) {
