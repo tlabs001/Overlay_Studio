@@ -54,6 +54,8 @@ export class CanvasManager {
     this.drawingDragState = null;
 
     this.measurementTool = null;
+    this.resizeObserver = null;
+    this.resizeRaf = null;
 
     this.handlePerspectivePointer = this.handlePerspectivePointer.bind(this);
     this.handleOverlayPointerDown = this.handleOverlayPointerDown.bind(this);
@@ -69,6 +71,19 @@ export class CanvasManager {
     this.createBrushLayer();
     this.resize();
     window.addEventListener('resize', () => this.resize());
+    const resizeTarget = this.canvas.parentElement || this.canvas;
+    if (resizeTarget) {
+      this.resizeObserver = new ResizeObserver(() => {
+        if (this.resizeRaf) {
+          cancelAnimationFrame(this.resizeRaf);
+        }
+        this.resizeRaf = requestAnimationFrame(() => {
+          this.resize();
+          this.resizeRaf = null;
+        });
+      });
+      this.resizeObserver.observe(resizeTarget);
+    }
     this.canvas.addEventListener('pointerdown', this.handlePerspectivePointer, true);
     this.canvas.addEventListener('pointerdown', this.handleOverlayPointerDown, true);
     this.canvas.addEventListener('pointermove', this.handleOverlayPointerMove, true);
@@ -79,8 +94,11 @@ export class CanvasManager {
 
   resize() {
     if (!this.canvas) return;
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    this.canvas.width = width;
+    this.canvas.height = height;
     this.resetCaches();
     this.resizeBrushLayer(this.canvas.width, this.canvas.height);
     this.syncLayerSizes();
