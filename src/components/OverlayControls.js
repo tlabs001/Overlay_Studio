@@ -24,6 +24,8 @@ export class OverlayControls {
       ghostBtn: document.getElementById('ghostTool'),
       faceBtn: document.getElementById('faceTool'),
       bodyBtn: document.getElementById('bodyTool'),
+      poseModelSelect: document.getElementById('poseModelQuality'),
+      poseModelStatus: document.getElementById('poseModelStatus'),
       refOutlineBtn: document.getElementById('refOutlineTool'),
       drawOutlineBtn: document.getElementById('drawOutlineTool'),
       bothOutlineBtn: document.getElementById('bothOutlineTool'),
@@ -239,6 +241,8 @@ export class OverlayControls {
       ghostBtn,
       faceBtn,
       bodyBtn,
+      poseModelSelect,
+      poseModelStatus,
       refOutlineBtn,
       drawOutlineBtn,
       bothOutlineBtn,
@@ -281,6 +285,44 @@ export class OverlayControls {
       }
       return false;
     };
+
+    const savedPoseModelQuality = localStorage.getItem('overlay.poseModelQuality') || 'full';
+    if (poseModelSelect) {
+      poseModelSelect.value = savedPoseModelQuality;
+    }
+
+    const applyPoseModelQuality = async (quality) => {
+      localStorage.setItem('overlay.poseModelQuality', quality);
+
+      if (!this.canvasManager?.landmarkDetector) return;
+
+      if (poseModelStatus) poseModelStatus.textContent = 'Loading…';
+      if (poseModelSelect) poseModelSelect.disabled = true;
+
+      try {
+        const ok = await this.canvasManager.landmarkDetector.setPoseModelQuality(quality);
+        if (poseModelStatus) poseModelStatus.textContent = ok ? 'Ready' : 'Unavailable';
+      } catch (e) {
+        console.warn('Failed to set pose model quality', e);
+        if (poseModelStatus) poseModelStatus.textContent = 'Error';
+      } finally {
+        if (poseModelSelect) poseModelSelect.disabled = false;
+        setTimeout(() => {
+          if (poseModelStatus) poseModelStatus.textContent = '';
+        }, 2000);
+      }
+    };
+
+    if (poseModelSelect) {
+      poseModelSelect.addEventListener('change', async () => {
+        const quality = poseModelSelect.value;
+        await applyPoseModelQuality(quality);
+      });
+    }
+
+    if (this.canvasManager?.landmarkDetector) {
+      applyPoseModelQuality(savedPoseModelQuality);
+    }
 
     const updateBaseUnitDrawingToggle = () => {
       if (warnMissing(baseUnitDrawingToggleBtn, 'base unit drawing toggle button')) return;

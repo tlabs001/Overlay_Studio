@@ -512,6 +512,33 @@ body.light .tools-panel {
   aspect-ratio: 16 / 9;
 }
 
+.analysis-settings {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.analysis-settings__label {
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.analysis-settings__select {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.analysis-settings__status {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
 .primary-btn:focus-visible,
 .ghost-btn:focus-visible {
   outline: 2px solid var(--accent);
