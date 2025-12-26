@@ -1,11 +1,19 @@
 const FACE_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
-const POSE_MODEL_URLS = [
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_full/pose_landmarker_full/float16/1/pose_landmarker_full.task',
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_full/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_lite/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_lite/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
-];
+const POSE_MODEL_URLS = {
+  lite: [
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+  ],
+  full: [
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task',
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+  ],
+  heavy: [
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task',
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task',
+  ],
+};
 
 async function loadVision() {
   try {
@@ -23,20 +31,42 @@ export class LandmarkDetector {
     this.filesetResolver = null;
     this.initializing = null;
     this.loadError = null;
-    this.faceError = null;
-    this.poseError = null;
+    this.faceLoadError = null;
+    this.poseLoadError = null;
+    this.poseModelQuality = 'full';
     this.available = false;
     this.visionModule = null;
   }
 
-  async init() {
-    if (this.available && (this.faceLandmarker || this.poseLandmarker)) return true;
+  async setPoseModelQuality(quality) {
+    if (!['lite', 'full', 'heavy'].includes(quality)) return false;
+    if (this.poseModelQuality === quality && this.poseLandmarker) return true;
+
+    this.poseModelQuality = quality;
+
+    try {
+      this.poseLandmarker?.close?.();
+    } catch (_) {}
+    this.poseLandmarker = null;
+    this.poseLoadError = null;
+
+    const initialized = await this.init({ poseOnly: true });
+    return initialized && Boolean(this.poseLandmarker);
+  }
+
+  async init(opts = {}) {
+    const { poseOnly = false } = opts;
+
+    if (poseOnly && this.poseLandmarker) return true;
+    if (!poseOnly && this.available && (this.faceLandmarker || this.poseLandmarker)) return true;
     if (this.initializing) return this.initializing;
 
     const initPromise = (async () => {
       this.loadError = null;
-      this.faceError = null;
-      this.poseError = null;
+      if (!poseOnly) {
+        this.faceLoadError = null;
+      }
+      this.poseLoadError = null;
       this.visionModule = this.visionModule || (await loadVision());
       const vision = this.visionModule;
       if (!vision) {
@@ -57,8 +87,8 @@ export class LandmarkDetector {
         return false;
       }
 
-      try {
-        if (!this.faceLandmarker) {
+      if (!poseOnly && !this.faceLandmarker) {
+        try {
           this.faceLandmarker = await vision.FaceLandmarker.createFromOptions(this.filesetResolver, {
             baseOptions: { modelAssetPath: FACE_MODEL_URL },
             runningMode: 'IMAGE',
@@ -67,14 +97,15 @@ export class LandmarkDetector {
             minFacePresenceConfidence: 0.35,
             minTrackingConfidence: 0.35,
           });
+        } catch (error) {
+          this.faceLoadError = error;
+          console.warn('Failed to initialize Face Landmarker:', error);
         }
-      } catch (error) {
-        this.faceError = error;
-        console.warn('Failed to initialize Face Landmarker:', error);
       }
 
       if (!this.poseLandmarker) {
-        for (const modelUrl of POSE_MODEL_URLS) {
+        const modelUrls = POSE_MODEL_URLS[this.poseModelQuality] || [];
+        for (const modelUrl of modelUrls) {
           try {
             this.poseLandmarker = await vision.PoseLandmarker.createFromOptions(this.filesetResolver, {
               baseOptions: { modelAssetPath: modelUrl },
@@ -84,10 +115,10 @@ export class LandmarkDetector {
               minPosePresenceConfidence: 0.35,
               minTrackingConfidence: 0.35,
             });
-            this.poseError = null;
+            this.poseLoadError = null;
             break;
           } catch (error) {
-            this.poseError = error;
+            this.poseLoadError = error;
             console.warn('Failed to initialize Pose Landmarker, trying fallback...', error);
           }
         }
@@ -95,7 +126,7 @@ export class LandmarkDetector {
 
       const hasAny = Boolean(this.faceLandmarker || this.poseLandmarker);
       if (!hasAny) {
-        this.loadError = this.faceError || this.poseError || new Error('Failed to initialize MediaPipe Tasks');
+        this.loadError = this.loadError || this.faceLoadError || this.poseLoadError || new Error('Failed to initialize MediaPipe Tasks');
         console.error('Failed to initialize MediaPipe Tasks:', this.loadError);
       }
       this.available = hasAny;
@@ -143,8 +174,8 @@ export class LandmarkDetector {
   }
 
   async detectPoseLandmarks(imageBitmap, canvasWidth, canvasHeight) {
-    const initialized = await this.init();
-    if (!initialized || !this.poseLandmarker || !imageBitmap) return [];
+    await this.init({ poseOnly: true });
+    if (!this.poseLandmarker || !imageBitmap) return [];
 
     const { width, height } = this.getDimensions(imageBitmap);
     const targetWidth = canvasWidth || width;

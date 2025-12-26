@@ -157,6 +157,15 @@
                 <button id="bodyTool" class="tool-chip" type="button">Body</button>
                 <button id="critiqueTool" class="tool-chip" type="button">Critique</button>
               </div>
+              <div class="analysis-settings">
+                <label class="analysis-settings__label" for="poseModelQuality">Body model</label>
+                <select id="poseModelQuality" class="analysis-settings__select">
+                  <option value="lite">Lite (fast)</option>
+                  <option value="full" selected>Full (better)</option>
+                  <option value="heavy">Heavy (best)</option>
+                </select>
+                <span id="poseModelStatus" class="analysis-settings__status" aria-live="polite"></span>
+              </div>
             </div>
           </div>
         </div>
