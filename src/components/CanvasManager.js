@@ -123,6 +123,8 @@ export class CanvasManager {
 
   setReferenceImage(image) {
     this.setImages({ reference: image, drawing: this.drawingImage });
+    this.faceLandmarks = null;
+    this.poseLandmarks = null;
     this.resetCaches();
     this.clearDifferenceLayer();
     this.baseUnitAnchor = null;
@@ -134,6 +136,8 @@ export class CanvasManager {
 
   setDrawingImage(image) {
     this.setImages({ reference: this.referenceImage, drawing: image });
+    this.faceLandmarks = null;
+    this.poseLandmarks = null;
     this.resetDrawingTransform();
     if (this.referenceImage) {
       this.autoAlignDrawing();
@@ -1063,20 +1067,37 @@ export class CanvasManager {
     return corners.some((corner) => Math.abs(point.x - corner.x) <= size && Math.abs(point.y - corner.y) <= size);
   }
 
-  autoAlignDrawing() {
+  autoAlignDrawing(options = {}) {
     if (!this.referenceImage || !this.drawingImage) return;
 
-    if (this.tryAutoAlignFromLandmarks('auto')) {
-      return;
-    }
-
-    const landmarkBounds = this.getAlignmentBounds();
+    const preferLandmarks = options.preferLandmarks !== false;
     const referenceRect = this.getDrawRect(this.referenceImage);
     const drawingRect = this.getDrawRect(this.drawingImage);
+
+    if (preferLandmarks) {
+      if (this.autoAlignFromLandmarks(this.faceLandmarks) || this.autoAlignFromLandmarks(this.poseLandmarks)) {
+        return;
+      }
+    }
+
     const referenceContent = this.getContentBounds(this.referenceImage);
     const drawingContent = this.getContentBounds(this.drawingImage);
+    const referenceDimensions = this.getImageDimensions(this.referenceImage);
+    const drawingDimensions = this.getImageDimensions(this.drawingImage);
 
-    if (referenceContent && drawingContent) {
+    const isFullFrameContent = (content, dimensions) => {
+      if (!content || !dimensions?.width || !dimensions?.height) return true;
+      const widthRatio = content.width / dimensions.width;
+      const heightRatio = content.height / dimensions.height;
+      return widthRatio >= 0.9 && heightRatio >= 0.9;
+    };
+
+    if (
+      referenceContent &&
+      drawingContent &&
+      !isFullFrameContent(referenceContent, referenceDimensions) &&
+      !isFullFrameContent(drawingContent, drawingDimensions)
+    ) {
       const refCenter = this.mapContentPointToCanvas(
         this.referenceImage,
         { x: referenceContent.centerX, y: referenceContent.centerY },
@@ -1113,18 +1134,21 @@ export class CanvasManager {
       return;
     }
 
-    if (landmarkBounds) {
-      const { reference, drawing } = landmarkBounds;
-      const scaleX = drawing.width ? reference.width / drawing.width : 1;
-      const scaleY = drawing.height ? reference.height / drawing.height : 1;
-      const scaleMatch = (scaleX + scaleY) / 2 || 1;
-      this.drawingTransform = {
-        offsetX: reference.centerX - drawing.centerX,
-        offsetY: reference.centerY - drawing.centerY,
-        scale: scaleMatch,
-      };
-      this.render();
-      return;
+    if (preferLandmarks) {
+      const landmarkBounds = this.getAlignmentBounds();
+      if (landmarkBounds) {
+        const { reference, drawing } = landmarkBounds;
+        const scaleX = drawing.width ? reference.width / drawing.width : 1;
+        const scaleY = drawing.height ? reference.height / drawing.height : 1;
+        const scaleMatch = (scaleX + scaleY) / 2 || 1;
+        this.drawingTransform = {
+          offsetX: reference.centerX - drawing.centerX,
+          offsetY: reference.centerY - drawing.centerY,
+          scale: scaleMatch,
+        };
+        this.render();
+        return;
+      }
     }
 
     const refCenterX = referenceRect.x + referenceRect.width / 2;
@@ -1668,58 +1692,109 @@ export class CanvasManager {
     return Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
   }
 
-  tryAutoAlignFromLandmarks(preferred = 'auto') {
-    const hasFace = Boolean(
-      this.faceLandmarks?.reference?.points?.length && this.faceLandmarks?.drawing?.points?.length
+  autoAlignFromLandmarks(landmarkSet) {
+    if (
+      !landmarkSet?.reference?.points?.length ||
+      !landmarkSet?.drawing?.points?.length ||
+      !this.referenceImage ||
+      !this.drawingImage
+    ) {
+      return false;
+    }
+
+    const referenceRect = this.getDrawRect(this.referenceImage);
+    const drawingRect = this.getDrawRect(this.drawingImage);
+    if (!referenceRect.width || !referenceRect.height || !drawingRect.width || !drawingRect.height) {
+      return false;
+    }
+
+    const center = {
+      x: drawingRect.x + drawingRect.width / 2,
+      y: drawingRect.y + drawingRect.height / 2,
+    };
+
+    const mapLandmarks = (points, image, dimensions, rect) => {
+      if (!points?.length) return [];
+      return points.map((point) => this.projectPointObject(point, rect, dimensions));
+    };
+
+    const referenceProjected = mapLandmarks(
+      landmarkSet.reference.points,
+      this.referenceImage,
+      landmarkSet.reference.dimensions,
+      referenceRect
     );
-    const hasPose = Boolean(
-      this.poseLandmarks?.reference?.points?.length && this.poseLandmarks?.drawing?.points?.length
+    const drawingProjected = mapLandmarks(
+      landmarkSet.drawing.points,
+      this.drawingImage,
+      landmarkSet.drawing.dimensions,
+      drawingRect
     );
 
-    let type = null;
-    if (preferred === 'face' && hasFace) type = 'face';
-    if (preferred === 'pose' && hasPose) type = 'pose';
-    if (preferred === 'auto') {
-      type = hasFace ? 'face' : hasPose ? 'pose' : null;
-    }
-    if (!type) return false;
+    const pairCount = Math.min(referenceProjected.length, drawingProjected.length);
+    if (!pairCount) return false;
 
-    const landmarkSet = type === 'face' ? this.faceLandmarks : this.poseLandmarks;
-    if (!landmarkSet) return false;
+    const step = Math.max(1, Math.ceil(pairCount / 200));
+    let used = 0;
+    let sumPx = 0;
+    let sumPy = 0;
+    let sumQx = 0;
+    let sumQy = 0;
+    let sumCross = 0;
+    let sumQQ = 0;
 
-    const previousTransform = { ...this.drawingTransform };
-    this.resetDrawingTransform();
+    for (let i = 0; i < pairCount; i += step) {
+      const refPoint = referenceProjected[i];
+      const drawPoint = drawingProjected[i];
+      if (!refPoint || !drawPoint) continue;
 
-    const [refAnchorA, refAnchorB] = this.getAlignmentScaleAnchors(type, landmarkSet, 'reference');
-    const [drawAnchorA, drawAnchorB] = this.getAlignmentScaleAnchors(type, landmarkSet, 'drawing');
-    const refDistance = this.computeDistance(refAnchorA, refAnchorB);
-    const drawDistance = this.computeDistance(drawAnchorA, drawAnchorB);
-    if (!refDistance || !drawDistance) {
-      this.drawingTransform = previousTransform;
-      return false;
-    }
+      const qcX = drawPoint.x - center.x;
+      const qcY = drawPoint.y - center.y;
+      const pcX = refPoint.x - center.x;
+      const pcY = refPoint.y - center.y;
 
-    const rawScale = refDistance / drawDistance;
-    const clampedScale = Math.min(Math.max(rawScale, 0.1), 8);
-    this.drawingTransform.scale = clampedScale;
-
-    const referenceKeypoints = this.getAlignmentKeypoints(type, landmarkSet, 'reference');
-    const drawingKeypoints = this.getAlignmentKeypoints(type, landmarkSet, 'drawing');
-    if (!referenceKeypoints.length || !drawingKeypoints.length) {
-      this.drawingTransform = previousTransform;
-      return false;
+      sumPx += pcX;
+      sumPy += pcY;
+      sumQx += qcX;
+      sumQy += qcY;
+      used += 1;
     }
 
-    const refCentroid = this.computeCentroid(referenceKeypoints);
-    const drawCentroid = this.computeCentroid(drawingKeypoints);
-    if (!refCentroid || !drawCentroid) {
-      this.drawingTransform = previousTransform;
-      return false;
+    if (!used) return false;
+
+    const meanPx = sumPx / used;
+    const meanPy = sumPy / used;
+    const meanQx = sumQx / used;
+    const meanQy = sumQy / used;
+
+    for (let i = 0; i < pairCount; i += step) {
+      const refPoint = referenceProjected[i];
+      const drawPoint = drawingProjected[i];
+      if (!refPoint || !drawPoint) continue;
+
+      const qcX = drawPoint.x - center.x - meanQx;
+      const qcY = drawPoint.y - center.y - meanQy;
+      const pcX = refPoint.x - center.x - meanPx;
+      const pcY = refPoint.y - center.y - meanPy;
+
+      sumCross += qcX * pcX + qcY * pcY;
+      sumQQ += qcX * qcX + qcY * qcY;
     }
 
-    this.drawingTransform.offsetX = refCentroid.x - drawCentroid.x;
-    this.drawingTransform.offsetY = refCentroid.y - drawCentroid.y;
+    if (!sumQQ) return false;
 
+    const rawScale = sumCross / sumQQ;
+    const scale = Math.min(Math.max(rawScale, 0.1), 8);
+    if (!Number.isFinite(scale)) return false;
+
+    const offsetX = meanPx - scale * meanQx;
+    const offsetY = meanPy - scale * meanQy;
+
+    this.drawingTransform = {
+      scale,
+      offsetX,
+      offsetY,
+    };
     this.render();
     return true;
   }
