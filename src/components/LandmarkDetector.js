@@ -36,6 +36,7 @@ export class LandmarkDetector {
     this.poseModelQuality = 'full';
     this.available = false;
     this.visionModule = null;
+    this.enableSegmentationMasks = false;
   }
 
   async setPoseModelQuality(quality) {
@@ -114,6 +115,7 @@ export class LandmarkDetector {
               minPoseDetectionConfidence: 0.35,
               minPosePresenceConfidence: 0.35,
               minTrackingConfidence: 0.35,
+              outputSegmentationMasks: Boolean(this.enableSegmentationMasks),
             });
             this.poseLoadError = null;
             break;
@@ -160,6 +162,75 @@ export class LandmarkDetector {
     }));
   }
 
+  getIrisIndices() {
+    if (!this.visionModule?.FaceLandmarker) return { left: [], right: [] };
+    const { FaceLandmarker } = this.visionModule;
+    const normalizeConnections = (connections = []) =>
+      connections.map((conn) => (Array.isArray(conn) ? conn : [conn.start, conn.end]));
+
+    const buildIndexList = (connections = []) => {
+      const indices = new Set();
+      normalizeConnections(connections).forEach(([a, b]) => {
+        if (typeof a === 'number') indices.add(a);
+        if (typeof b === 'number') indices.add(b);
+      });
+      return Array.from(indices);
+    };
+
+    return {
+      left: buildIndexList(FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS),
+      right: buildIndexList(FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS),
+    };
+  }
+
+  getIrisConnections() {
+    if (!this.visionModule?.FaceLandmarker) return { left: [], right: [] };
+    const { FaceLandmarker } = this.visionModule;
+    const normalizeConnections = (connections = []) =>
+      connections.map((conn) => (Array.isArray(conn) ? conn : [conn.start, conn.end]));
+
+    return {
+      left: normalizeConnections(FaceLandmarker.FACE_LANDMARKS_LEFT_IRIS),
+      right: normalizeConnections(FaceLandmarker.FACE_LANDMARKS_RIGHT_IRIS),
+    };
+  }
+
+  getPupilCenters(faceLandmarksForOneFace) {
+    if (!faceLandmarksForOneFace?.length) return null;
+    const { left: leftIndices, right: rightIndices } = this.getIrisIndices();
+    if (!leftIndices.length || !rightIndices.length) return null;
+
+    const centroid = (indices = []) => {
+      const points = indices
+        .map((idx) => faceLandmarksForOneFace[idx])
+        .filter((point) => point && typeof point.x === 'number' && typeof point.y === 'number');
+      if (!points.length) return null;
+      const sum = points.reduce(
+        (acc, point) => ({
+          x: acc.x + point.x,
+          y: acc.y + point.y,
+          z: acc.z + (point.z || 0),
+        }),
+        { x: 0, y: 0, z: 0 }
+      );
+      const count = points.length;
+      return { x: sum.x / count, y: sum.y / count, z: sum.z / count };
+    };
+
+    return {
+      left: centroid(leftIndices),
+      right: centroid(rightIndices),
+    };
+  }
+
+  getPoseConnections() {
+    if (!this.visionModule?.PoseLandmarker) return [];
+    const { PoseLandmarker } = this.visionModule;
+    return (PoseLandmarker.POSE_CONNECTIONS || []).map((conn) =>
+      Array.isArray(conn) ? conn : [conn.start, conn.end]
+    );
+  }
+
   async detectFaceLandmarks(imageBitmap, canvasWidth, canvasHeight) {
     const initialized = await this.init();
     if (!initialized || !this.faceLandmarker || !imageBitmap) return [];
@@ -175,7 +246,9 @@ export class LandmarkDetector {
 
   async detectPoseLandmarks(imageBitmap, canvasWidth, canvasHeight) {
     await this.init({ poseOnly: true });
-    if (!this.poseLandmarker || !imageBitmap) return [];
+    if (!this.poseLandmarker || !imageBitmap) {
+      return { points: [], segmentationMask: null };
+    }
 
     const { width, height } = this.getDimensions(imageBitmap);
     const targetWidth = canvasWidth || width;
@@ -183,7 +256,26 @@ export class LandmarkDetector {
 
     const result = await this.poseLandmarker.detect(imageBitmap);
     const poseLandmarks = result?.landmarks?.[0] || [];
-    return this.mapLandmarksToPixels(poseLandmarks, targetWidth, targetHeight);
+    const segmentationMask = result?.segmentationMasks?.[0];
+
+    let maskCopy = null;
+    try {
+      if (segmentationMask?.width && segmentationMask?.height && segmentationMask.getAsFloat32Array) {
+        const data = segmentationMask.getAsFloat32Array();
+        maskCopy = {
+          width: segmentationMask.width,
+          height: segmentationMask.height,
+          data: new Float32Array(data),
+        };
+      }
+    } catch (error) {
+      console.warn('Failed to copy segmentation mask', error);
+    }
+
+    return {
+      points: this.mapLandmarksToPixels(poseLandmarks, targetWidth, targetHeight),
+      segmentationMask: maskCopy,
+    };
   }
 
   async detectFacePairs(referenceImage, drawingImage, dimensions = {}) {
@@ -199,13 +291,23 @@ export class LandmarkDetector {
 
   async detectPosePairs(referenceImage, drawingImage, dimensions = {}) {
     const { refWidth, refHeight, drawWidth, drawHeight, width, height } = dimensions;
-    const refPoints = referenceImage
+    const { points: refPoints = [], segmentationMask: refSegmentationMask = null } = referenceImage
       ? await this.detectPoseLandmarks(referenceImage, refWidth || width, refHeight || height)
-      : [];
-    const drawPoints = drawingImage
+      : {};
+    const { points: drawPoints = [], segmentationMask: drawSegmentationMask = null } = drawingImage
       ? await this.detectPoseLandmarks(drawingImage, drawWidth || width, drawHeight || height)
-      : [];
-    return { refPoints, drawPoints };
+      : {};
+    return { refPoints, drawPoints, refSegmentationMask, drawSegmentationMask };
+  }
+
+  setOutputSegmentationMasks(enabled = false) {
+    this.enableSegmentationMasks = Boolean(enabled);
+    try {
+      this.poseLandmarker?.close?.();
+    } catch (_) {}
+    this.poseLandmarker = null;
+    this.poseLoadError = null;
+    return this.init({ poseOnly: true });
   }
 }
 

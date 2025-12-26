@@ -166,6 +166,29 @@
                 </select>
                 <span id="poseModelStatus" class="analysis-settings__status" aria-live="polite"></span>
               </div>
+              <div class="analysis-controls">
+                <label class="analysis-toggle">
+                  <input type="checkbox" id="togglePupils" />
+                  <span>Show pupils</span>
+                </label>
+                <label class="analysis-toggle">
+                  <input type="checkbox" id="toggleIrises" />
+                  <span>Show irises</span>
+                </label>
+                <label class="analysis-toggle">
+                  <span>Pose density</span>
+                  <select id="poseDensity" class="analysis-settings__select analysis-settings__select--inline">
+                    <option value="0">Off</option>
+                    <option value="1">Low</option>
+                    <option value="2">Medium</option>
+                    <option value="3">High</option>
+                  </select>
+                </label>
+                <label class="analysis-toggle">
+                  <input type="checkbox" id="toggleSegmentation" />
+                  <span>Show body silhouette (beta)</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
