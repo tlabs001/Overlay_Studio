@@ -5,6 +5,7 @@ import { OverlayControls } from './components/OverlayControls.js';
 import { ExportTool } from './components/ExportTool.js';
 import { LandmarkDetector } from './components/LandmarkDetector.js';
 import { BrushTool } from './components/BrushTool.js';
+import { CloudVisionClient } from './utils/cloudVisionClient.js';
 
 
 const IS_LOCAL_DEV =
@@ -26,6 +27,8 @@ const safeSessionSet = (key, value) => {
     // Ignore storage errors (e.g. privacy modes)
   }
 };
+
+const apiModeKey = 'overlay.cloudAiEnabled';
 
 /**
  * During rapid local development, a previously-installed service worker can serve
@@ -71,6 +74,8 @@ const initializeApp = () => {
   const overlayCanvas = document.getElementById('overlayCanvas');
   const canvasManager = new CanvasManager(overlayCanvas);
   canvasManager.init(overlayCanvas);
+  const cloudVision = new CloudVisionClient('');
+  canvasManager.setCloudVisionClient?.(cloudVision);
   const brushTool = new BrushTool(canvasManager.brushCanvas, canvasManager.getBrushContext());
   brushTool.attachEvents();
 
@@ -102,6 +107,106 @@ const initializeApp = () => {
   const diffBtn = document.getElementById('diffTool');
   const saveOverlayBtn = document.getElementById('saveOverlay');
   const normalViewBtn = document.getElementById('normalViewTool');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const apiKeySaveBtn = document.getElementById('apiKeySaveBtn');
+  const apiModeToggle = document.getElementById('apiModeToggle');
+  const apiStatusText = document.getElementById('apiStatusText');
+  const apiToggleLabel = document.getElementById('apiToggleLabel');
+
+  let cloudEnabled = localStorage.getItem(apiModeKey) === 'true';
+  let apiHasKey = false;
+
+  const setCloudPreference = (enabled) => {
+    cloudEnabled = !!enabled;
+    localStorage.setItem(apiModeKey, cloudEnabled ? 'true' : 'false');
+  };
+
+  const updateApiStatusText = (message) => {
+    if (apiStatusText && message) {
+      apiStatusText.textContent = message;
+    }
+  };
+
+  const syncCloudUi = (hasKey = apiHasKey) => {
+    apiHasKey = !!hasKey;
+    const effective = cloudEnabled && apiHasKey;
+    canvasManager.setCloudAiEnabled?.(effective);
+    if (apiModeToggle) {
+      apiModeToggle.disabled = !apiHasKey;
+      apiModeToggle.checked = effective;
+    }
+    if (apiToggleLabel) {
+      apiToggleLabel.textContent = apiModeToggle?.checked ? 'ON' : 'OFF';
+    }
+    return effective;
+  };
+
+  const refreshApiStatus = async () => {
+    try {
+      const status = await cloudVision.status();
+      const hasKey = !!status?.hasKey;
+      const effective = syncCloudUi(hasKey);
+      updateApiStatusText(hasKey ? 'Key ready.' : 'Enter key to enable Cloud mode.');
+      return effective;
+    } catch (error) {
+      console.warn('API status unavailable; using local mode.', error);
+      cloudEnabled = false;
+      syncCloudUi(false);
+      updateApiStatusText('API server not running. Using local mode.');
+      return false;
+    }
+  };
+
+  const handleSaveApiKey = async () => {
+    if (!apiKeyInput) return;
+    const value = apiKeyInput.value.trim();
+    if (!value) {
+      updateApiStatusText('Enter a valid API key to enable Cloud mode.');
+      return;
+    }
+    try {
+      await cloudVision.setKey(value);
+      apiKeyInput.value = '';
+      await refreshApiStatus();
+      updateApiStatusText('Key saved. Toggle to enable Cloud mode.');
+    } catch (error) {
+      console.warn('Failed to save API key', error);
+      cloudEnabled = false;
+      syncCloudUi(false);
+      updateApiStatusText('API server not running. Using local mode.');
+    }
+  };
+
+  if (apiKeySaveBtn) {
+    apiKeySaveBtn.addEventListener('click', handleSaveApiKey);
+  }
+
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        handleSaveApiKey();
+      }
+    });
+  }
+
+  if (apiModeToggle) {
+    apiModeToggle.addEventListener('change', () => {
+      if (!apiHasKey) {
+        syncCloudUi(false);
+        updateApiStatusText('Enter key to enable Cloud mode.');
+        return;
+      }
+      setCloudPreference(apiModeToggle.checked);
+      const effective = syncCloudUi();
+      updateApiStatusText(
+        effective ? 'Cloud mode enabled (uses credits).' : 'Local mode.'
+      );
+    });
+  }
+
+  syncCloudUi();
+  refreshApiStatus();
 
   const setupCollapsibleSections = () => {
     const subsections = document.querySelectorAll('.tool-subsection');

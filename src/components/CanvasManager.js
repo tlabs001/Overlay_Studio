@@ -60,6 +60,8 @@ export class CanvasManager {
     this.differenceScore = null;
     this.drawingAdjustmentEnabled = true;
     this.drawingDragState = null;
+    this.cloudAiEnabled = false;
+    this.cloudVision = null;
 
     this.measurementTool = null;
     this.resizeObserver = null;
@@ -159,6 +161,14 @@ export class CanvasManager {
 
   setLandmarkDetector(detector) {
     this.landmarkDetector = detector;
+  }
+
+  setCloudVisionClient(client) {
+    this.cloudVision = client || null;
+  }
+
+  setCloudAiEnabled(enabled) {
+    this.cloudAiEnabled = !!enabled;
   }
 
   setMeasurementTool(tool) {
@@ -1181,20 +1191,34 @@ export class CanvasManager {
   autoAlignDrawing(options = {}) {
     if (!this.referenceImage || !this.drawingImage) return;
 
-    const preferLandmarks = options.preferLandmarks !== false;
+    const preferLandmarks = !!options.preferLandmarks;
     const referenceRect = this.getDrawRect(this.referenceImage);
     const drawingRect = this.getDrawRect(this.drawingImage);
+    const landmarkBounds = this.getAlignmentBounds();
+    const referenceContent = this.getContentBounds(this.referenceImage);
+    const drawingContent = this.getContentBounds(this.drawingImage);
+    const referenceDimensions = this.getImageDimensions(this.referenceImage);
+    const drawingDimensions = this.getImageDimensions(this.drawingImage);
 
     if (preferLandmarks) {
       if (this.autoAlignFromLandmarks(this.faceLandmarks) || this.autoAlignFromLandmarks(this.poseLandmarks)) {
         return;
       }
-    }
 
-    const referenceContent = this.getContentBounds(this.referenceImage);
-    const drawingContent = this.getContentBounds(this.drawingImage);
-    const referenceDimensions = this.getImageDimensions(this.referenceImage);
-    const drawingDimensions = this.getImageDimensions(this.drawingImage);
+      if (landmarkBounds) {
+        const { reference, drawing } = landmarkBounds;
+        const scaleX = drawing.width ? reference.width / drawing.width : 1;
+        const scaleY = drawing.height ? reference.height / drawing.height : 1;
+        const scaleMatch = (scaleX + scaleY) / 2 || 1;
+        this.drawingTransform = {
+          offsetX: reference.centerX - drawing.centerX,
+          offsetY: reference.centerY - drawing.centerY,
+          scale: scaleMatch,
+        };
+        this.render();
+        return;
+      }
+    }
 
     const isFullFrameContent = (content, dimensions) => {
       if (!content || !dimensions?.width || !dimensions?.height) return true;
@@ -1245,21 +1269,18 @@ export class CanvasManager {
       return;
     }
 
-    if (preferLandmarks) {
-      const landmarkBounds = this.getAlignmentBounds();
-      if (landmarkBounds) {
-        const { reference, drawing } = landmarkBounds;
-        const scaleX = drawing.width ? reference.width / drawing.width : 1;
-        const scaleY = drawing.height ? reference.height / drawing.height : 1;
-        const scaleMatch = (scaleX + scaleY) / 2 || 1;
-        this.drawingTransform = {
-          offsetX: reference.centerX - drawing.centerX,
-          offsetY: reference.centerY - drawing.centerY,
-          scale: scaleMatch,
-        };
-        this.render();
-        return;
-      }
+    if (landmarkBounds) {
+      const { reference, drawing } = landmarkBounds;
+      const scaleX = drawing.width ? reference.width / drawing.width : 1;
+      const scaleY = drawing.height ? reference.height / drawing.height : 1;
+      const scaleMatch = (scaleX + scaleY) / 2 || 1;
+      this.drawingTransform = {
+        offsetX: reference.centerX - drawing.centerX,
+        offsetY: reference.centerY - drawing.centerY,
+        scale: scaleMatch,
+      };
+      this.render();
+      return;
     }
 
     const refCenterX = referenceRect.x + referenceRect.width / 2;

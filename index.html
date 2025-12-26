@@ -251,6 +251,28 @@
     </div>
 
     <button id="fabBtn" class="fab" type="button" aria-label="Open tools">+</button>
+    <div id="apiBar" class="api-bar" role="region" aria-label="Cloud AI">
+      <div class="api-bar__left">
+        <span class="api-bar__label">Cloud AI</span>
+        <input
+          id="apiKeyInput"
+          class="api-bar__input"
+          type="password"
+          placeholder="Paste API key…"
+          autocomplete="off"
+        />
+        <button id="apiKeySaveBtn" class="api-bar__btn" type="button">Enter</button>
+      </div>
+
+      <div class="api-bar__right">
+        <label class="api-toggle">
+          <input id="apiModeToggle" type="checkbox" />
+          <span class="api-toggle__track" aria-hidden="true"></span>
+          <span class="api-toggle__text" id="apiToggleLabel">OFF</span>
+        </label>
+        <span id="apiStatusText" class="api-bar__status" aria-live="polite"></span>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="src/app.js"></script>
