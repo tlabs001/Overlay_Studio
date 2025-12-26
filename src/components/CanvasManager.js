@@ -1047,6 +1047,10 @@ export class CanvasManager {
   autoAlignDrawing() {
     if (!this.referenceImage || !this.drawingImage) return;
 
+    if (this.tryAutoAlignFromLandmarks('auto')) {
+      return;
+    }
+
     const landmarkBounds = this.getAlignmentBounds();
     const referenceRect = this.getDrawRect(this.referenceImage);
     const drawingRect = this.getDrawRect(this.drawingImage);
@@ -1592,9 +1596,113 @@ export class CanvasManager {
 
   mapPointsToCanvas(points, image, providedDimensions) {
     if (!points?.length) return [];
-    const rect = this.getDrawRect(image);
+    const rect = image === this.drawingImage ? this.getDrawingRect(image) : this.getDrawRect(image);
     const dimensions = providedDimensions || this.getImageDimensions(image);
     return points.map((point) => this.projectPointObject(point, rect, dimensions));
+  }
+
+  getAlignmentKeypoints(type, landmarkSet, which = 'reference') {
+    const indexMap = {
+      face: [33, 263, 1, 13, 152],
+      pose: [11, 12, 23, 24, 0],
+    };
+    const indices = indexMap[type] || [];
+    const source = landmarkSet?.[which];
+    if (!indices.length || !source?.points?.length) return [];
+
+    const picked = indices.map((idx) => source.points[idx]).filter(Boolean);
+    if (!picked.length) return [];
+
+    const image = which === 'reference' ? this.referenceImage : this.drawingImage;
+    return this.mapPointsToCanvas(picked, image, source.dimensions);
+  }
+
+  getAlignmentScaleAnchors(type, landmarkSet, which = 'reference') {
+    const anchorMap = {
+      face: [33, 263],
+      pose: [11, 12],
+    };
+    const indices = anchorMap[type] || [];
+    const source = landmarkSet?.[which];
+    if (indices.length < 2 || !source?.points?.length) return [null, null];
+
+    const anchors = indices.map((idx) => source.points[idx]);
+    if (anchors.some((point) => !point)) return [null, null];
+
+    const image = which === 'reference' ? this.referenceImage : this.drawingImage;
+    const mappedAnchors = this.mapPointsToCanvas(anchors, image, source.dimensions);
+    if (mappedAnchors.length < 2) return [null, null];
+    return mappedAnchors;
+  }
+
+  computeCentroid(points = []) {
+    if (!points.length) return null;
+    const total = points.reduce(
+      (acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }),
+      { x: 0, y: 0 }
+    );
+    return { x: total.x / points.length, y: total.y / points.length };
+  }
+
+  computeDistance(a, b) {
+    if (!a || !b) return 0;
+    return Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
+  }
+
+  tryAutoAlignFromLandmarks(preferred = 'auto') {
+    const hasFace = Boolean(
+      this.faceLandmarks?.reference?.points?.length && this.faceLandmarks?.drawing?.points?.length
+    );
+    const hasPose = Boolean(
+      this.poseLandmarks?.reference?.points?.length && this.poseLandmarks?.drawing?.points?.length
+    );
+
+    let type = null;
+    if (preferred === 'face' && hasFace) type = 'face';
+    if (preferred === 'pose' && hasPose) type = 'pose';
+    if (preferred === 'auto') {
+      type = hasFace ? 'face' : hasPose ? 'pose' : null;
+    }
+    if (!type) return false;
+
+    const landmarkSet = type === 'face' ? this.faceLandmarks : this.poseLandmarks;
+    if (!landmarkSet) return false;
+
+    const previousTransform = { ...this.drawingTransform };
+    this.resetDrawingTransform();
+
+    const [refAnchorA, refAnchorB] = this.getAlignmentScaleAnchors(type, landmarkSet, 'reference');
+    const [drawAnchorA, drawAnchorB] = this.getAlignmentScaleAnchors(type, landmarkSet, 'drawing');
+    const refDistance = this.computeDistance(refAnchorA, refAnchorB);
+    const drawDistance = this.computeDistance(drawAnchorA, drawAnchorB);
+    if (!refDistance || !drawDistance) {
+      this.drawingTransform = previousTransform;
+      return false;
+    }
+
+    const rawScale = refDistance / drawDistance;
+    const clampedScale = Math.min(Math.max(rawScale, 0.1), 8);
+    this.drawingTransform.scale = clampedScale;
+
+    const referenceKeypoints = this.getAlignmentKeypoints(type, landmarkSet, 'reference');
+    const drawingKeypoints = this.getAlignmentKeypoints(type, landmarkSet, 'drawing');
+    if (!referenceKeypoints.length || !drawingKeypoints.length) {
+      this.drawingTransform = previousTransform;
+      return false;
+    }
+
+    const refCentroid = this.computeCentroid(referenceKeypoints);
+    const drawCentroid = this.computeCentroid(drawingKeypoints);
+    if (!refCentroid || !drawCentroid) {
+      this.drawingTransform = previousTransform;
+      return false;
+    }
+
+    this.drawingTransform.offsetX = refCentroid.x - drawCentroid.x;
+    this.drawingTransform.offsetY = refCentroid.y - drawCentroid.y;
+
+    this.render();
+    return true;
   }
 
   setBaseUnitAnchor(anchor = null) {

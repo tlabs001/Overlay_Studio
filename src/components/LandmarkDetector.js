@@ -1,7 +1,11 @@
 const FACE_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
-const POSE_MODEL_URL =
-  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_lite/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+const POSE_MODEL_URLS = [
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_full/pose_landmarker_full/float16/1/pose_landmarker_full.task',
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_full/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_lite/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  'https://storage.googleapis.com/mediapipe-models/pose_landmarker_lite/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+];
 
 async function loadVision() {
   try {
@@ -19,16 +23,20 @@ export class LandmarkDetector {
     this.filesetResolver = null;
     this.initializing = null;
     this.loadError = null;
+    this.faceError = null;
+    this.poseError = null;
     this.available = false;
     this.visionModule = null;
   }
 
   async init() {
-    if (this.available && this.faceLandmarker && this.poseLandmarker) return true;
+    if (this.available && (this.faceLandmarker || this.poseLandmarker)) return true;
     if (this.initializing) return this.initializing;
 
     const initPromise = (async () => {
       this.loadError = null;
+      this.faceError = null;
+      this.poseError = null;
       this.visionModule = this.visionModule || (await loadVision());
       const vision = this.visionModule;
       if (!vision) {
@@ -43,30 +51,55 @@ export class LandmarkDetector {
             'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.15/wasm'
           );
         }
+      } catch (error) {
+        this.loadError = error;
+        console.error('Failed to set up MediaPipe fileset resolver:', error);
+        return false;
+      }
 
+      try {
         if (!this.faceLandmarker) {
           this.faceLandmarker = await vision.FaceLandmarker.createFromOptions(this.filesetResolver, {
             baseOptions: { modelAssetPath: FACE_MODEL_URL },
             runningMode: 'IMAGE',
             numFaces: 1,
+            minFaceDetectionConfidence: 0.35,
+            minFacePresenceConfidence: 0.35,
+            minTrackingConfidence: 0.35,
           });
         }
-
-        if (!this.poseLandmarker) {
-          this.poseLandmarker = await vision.PoseLandmarker.createFromOptions(this.filesetResolver, {
-            baseOptions: { modelAssetPath: POSE_MODEL_URL },
-            runningMode: 'IMAGE',
-            numPoses: 1,
-          });
-        }
-
-        this.available = true;
-        return true;
       } catch (error) {
-        this.loadError = error;
-        console.error('Failed to initialize MediaPipe Tasks:', error);
-        return false;
+        this.faceError = error;
+        console.warn('Failed to initialize Face Landmarker:', error);
       }
+
+      if (!this.poseLandmarker) {
+        for (const modelUrl of POSE_MODEL_URLS) {
+          try {
+            this.poseLandmarker = await vision.PoseLandmarker.createFromOptions(this.filesetResolver, {
+              baseOptions: { modelAssetPath: modelUrl },
+              runningMode: 'IMAGE',
+              numPoses: 1,
+              minPoseDetectionConfidence: 0.35,
+              minPosePresenceConfidence: 0.35,
+              minTrackingConfidence: 0.35,
+            });
+            this.poseError = null;
+            break;
+          } catch (error) {
+            this.poseError = error;
+            console.warn('Failed to initialize Pose Landmarker, trying fallback...', error);
+          }
+        }
+      }
+
+      const hasAny = Boolean(this.faceLandmarker || this.poseLandmarker);
+      if (!hasAny) {
+        this.loadError = this.faceError || this.poseError || new Error('Failed to initialize MediaPipe Tasks');
+        console.error('Failed to initialize MediaPipe Tasks:', this.loadError);
+      }
+      this.available = hasAny;
+      return hasAny;
     })();
 
     this.initializing = initPromise
