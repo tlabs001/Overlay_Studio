@@ -616,8 +616,8 @@ export class OverlayControls {
     const scaleStep = 1.05;
 
     if (autoAlignBtn) {
-      autoAlignBtn.addEventListener('click', () => {
-        this.canvasManager.autoAlignDrawing();
+      autoAlignBtn.addEventListener('click', async () => {
+        await this.handleAutoAlignAI();
         this.closePanel();
       });
     }
@@ -728,6 +728,77 @@ export class OverlayControls {
     if (refPoints?.length && drawPoints?.length) {
       this.canvasManager.autoAlignDrawing();
     }
+  }
+
+  async handleAutoAlignAI() {
+    if (!this.canvasManager.referenceImage || !this.canvasManager.drawingImage) {
+      window.alert('Load both reference and drawing images first.');
+      return;
+    }
+
+    const { landmarkDetector } = this.canvasManager;
+    if (!landmarkDetector) {
+      this.canvasManager.autoAlignDrawing();
+      return;
+    }
+
+    const referenceBitmap = await this.toImageBitmap(this.canvasManager.referenceImage);
+    const drawingBitmap = await this.toImageBitmap(this.canvasManager.drawingImage);
+    const refDimensions = this.canvasManager.getImageDimensions(this.canvasManager.referenceImage);
+    const drawingDimensions = this.canvasManager.getImageDimensions(this.canvasManager.drawingImage);
+
+    const initialized = await landmarkDetector.init();
+    if (!initialized) {
+      console.warn('MediaPipe initialization failed; using fallback align.', landmarkDetector.loadError);
+      this.canvasManager.autoAlignDrawing();
+      return;
+    }
+
+    let usedLandmarks = false;
+
+    try {
+      const { refPoints, drawPoints } = await landmarkDetector.detectFacePairs(referenceBitmap, drawingBitmap, {
+        refWidth: refDimensions.width,
+        refHeight: refDimensions.height,
+        drawWidth: drawingDimensions.width,
+        drawHeight: drawingDimensions.height,
+      });
+
+      if (refPoints?.length && drawPoints?.length) {
+        this.canvasManager.setFaceLandmarks(refPoints, drawPoints, refDimensions, drawingDimensions);
+        usedLandmarks = true;
+      } else {
+        console.warn('Face landmarks not available for auto align.');
+      }
+    } catch (error) {
+      console.warn('Face landmark detection failed for auto align.', error);
+    }
+
+    if (!usedLandmarks) {
+      try {
+        const { refPoints, drawPoints } = await landmarkDetector.detectPosePairs(
+          referenceBitmap,
+          drawingBitmap,
+          {
+            refWidth: refDimensions.width,
+            refHeight: refDimensions.height,
+            drawWidth: drawingDimensions.width,
+            drawHeight: drawingDimensions.height,
+          }
+        );
+
+        if (refPoints?.length && drawPoints?.length) {
+          this.canvasManager.setPoseLandmarks(refPoints, drawPoints, refDimensions, drawingDimensions);
+          usedLandmarks = true;
+        } else {
+          console.warn('Pose landmarks not available for auto align.');
+        }
+      } catch (error) {
+        console.warn('Pose landmark detection failed for auto align.', error);
+      }
+    }
+
+    this.canvasManager.autoAlignDrawing();
   }
 
   async handlePoseDetection() {
