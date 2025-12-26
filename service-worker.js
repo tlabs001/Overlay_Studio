@@ -28,6 +28,7 @@ const OFFLINE_ASSETS = [
   withBase('/src/components/LandmarkDetector.js'),
   withBase('/src/components/BrushTool.js'),
   withBase('/src/components/CritiqueTool.js'),
+  withBase('/src/utils/cloudVisionClient.js'),
   withBase('/src/utils/edgeDetection.js'),
   withBase('/public/manifest.json'),
   withBase('/public/icons/app-icon.png'),
@@ -41,6 +42,7 @@ const NETWORK_FIRST_PATHS = new Set(
     '/index.html',
     '/src/app.js',
     '/src/styles/main.css',
+    '/src/utils/cloudVisionClient.js',
     // Also keep core modules fresh.
     '/src/components/CanvasManager.js',
     '/src/components/MeasurementTool.js',
@@ -84,6 +86,11 @@ self.addEventListener('fetch', (event) => {
 
   // Don't try to cache third-party CDNs; let them go to the network normally.
   if (requestURL.origin !== self.location.origin) {
+    return;
+  }
+
+  if (requestURL.pathname.includes('/api/')) {
+    event.respondWith(fetch(request));
     return;
   }
 

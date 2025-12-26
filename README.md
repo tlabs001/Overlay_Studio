@@ -35,18 +35,19 @@ Built to work on touchscreens with:
 
 ## 🚀 How to Use
 
-1. Open [index.html](index.html) in a browser (or run with Live Server)
-2. Upload your reference image and your drawing
-3. Use tools to align, measure, and analyze
-4. Export overlay results, session saves, or time-lapses
-5. Install to mobile (PWA) for offline use
+1. Run `npm run dev` and open `http://localhost:3000` (Node 18+ required; no build step).
+2. Paste your OpenAI API key in the bottom **Cloud AI** bar, click **Enter**, then toggle **ON** to use cloud face detection and alignment (the key stays only in the local server's memory).
+3. Leave the toggle **OFF** to use the built-in on-device MediaPipe tools.
+4. Upload your reference image and drawing, then use the overlay, measurement, and analysis tools.
+5. Export overlay results, session saves, or time-lapses, or install as a PWA for offline use.
 
 ### 🧪 Quick regression check
 
-1. Run `python -m http.server 3000` and open `http://localhost:3000`.
-2. Upload at least one image (both reference and drawing if available).
-3. Open DevTools and run `document.getElementById('overlayCanvas').getContext('2d').getImageData(window.innerWidth/2, window.innerHeight/2, 1, 1).data[3]`.
-4. The returned alpha value should be greater than `0` unless the uploaded image is transparent at the center.
+1. Run `npm run dev` and open `http://localhost:3000`.
+2. Confirm the bottom Cloud AI bar appears; with no key entered the toggle should be disabled and the app should stay in Local mode.
+3. Upload at least one image (both reference and drawing if available).
+4. Open DevTools and run `document.getElementById('overlayCanvas').getContext('2d').getImageData(window.innerWidth/2, window.innerHeight/2, 1, 1).data[3]`.
+5. The returned alpha value should be greater than `0` unless the uploaded image is transparent at the center.
 
 ---
 

@@ -109,6 +109,40 @@ export class OverlayControls {
     };
   }
 
+  isCloudEnabled() {
+    return !!this.canvasManager?.cloudAiEnabled && !!this.canvasManager?.cloudVision;
+  }
+
+  mapNormalizedKeypoints(keypoints, dimensions) {
+    if (!keypoints || !dimensions?.width || !dimensions?.height) return [];
+    const order = ['left_eye', 'right_eye', 'nose_tip', 'mouth_left', 'mouth_right'];
+    return order
+      .map((key) => keypoints?.[key])
+      .filter(Boolean)
+      .map((point) => ({
+        x: point.x * dimensions.width,
+        y: point.y * dimensions.height,
+      }));
+  }
+
+  async detectCloudFacePairs() {
+    if (!this.canvasManager?.cloudVision) {
+      throw new Error('Cloud vision client is unavailable.');
+    }
+    const { referenceImage, drawingImage } = this.canvasManager;
+    if (!referenceImage || !drawingImage) {
+      throw new Error('Load both reference and drawing images.');
+    }
+
+    const response = await this.canvasManager.cloudVision.detectFaceKeypoints(referenceImage, drawingImage);
+    const refDimensions = this.canvasManager.getImageDimensions(referenceImage);
+    const drawDimensions = this.canvasManager.getImageDimensions(drawingImage);
+    const refPoints = this.mapNormalizedKeypoints(response?.reference?.keypoints, refDimensions);
+    const drawPoints = this.mapNormalizedKeypoints(response?.drawing?.keypoints, drawDimensions);
+
+    return { refPoints, drawPoints, refDimensions, drawDimensions };
+  }
+
   getLandmarkSetForCritique() {
     const face = this.canvasManager?.faceLandmarks;
     const pose = this.canvasManager?.poseLandmarks;
@@ -897,11 +931,27 @@ export class OverlayControls {
   }
 
   async handleFaceDetection() {
-    if (!this.canvasManager.landmarkDetector) return;
+    const cloudActive = this.isCloudEnabled();
     if (!this.canvasManager.referenceImage && !this.canvasManager.drawingImage) {
       window.alert('Load a reference or drawing image first.');
       return;
     }
+
+    if (cloudActive) {
+      try {
+        const { refPoints, drawPoints, refDimensions, drawDimensions } = await this.detectCloudFacePairs();
+        this.canvasManager.setFaceLandmarks(refPoints, drawPoints, refDimensions, drawDimensions);
+        this.canvasManager.render();
+        if (refPoints?.length && drawPoints?.length) {
+          this.canvasManager.autoAlignDrawing({ preferLandmarks: true });
+        }
+        return;
+      } catch (error) {
+        console.warn('Cloud face detection failed; falling back to local.', error);
+      }
+    }
+
+    if (!this.canvasManager.landmarkDetector) return;
 
     const initialized = await this.canvasManager.landmarkDetector.init();
     if (!initialized) {
@@ -948,7 +998,7 @@ export class OverlayControls {
     );
     this.canvasManager.render();
     if (adjustedRefPoints?.length && adjustedDrawPoints?.length) {
-      this.canvasManager.autoAlignDrawing();
+      this.canvasManager.autoAlignDrawing({ preferLandmarks: true });
     }
   }
 
@@ -956,6 +1006,18 @@ export class OverlayControls {
     if (!this.canvasManager.referenceImage || !this.canvasManager.drawingImage) {
       window.alert('Load both reference and drawing images first.');
       return;
+    }
+
+    const cloudActive = this.isCloudEnabled();
+    if (cloudActive) {
+      try {
+        const { refPoints, drawPoints, refDimensions, drawDimensions } = await this.detectCloudFacePairs();
+        this.canvasManager.setFaceLandmarks(refPoints, drawPoints, refDimensions, drawDimensions);
+        this.canvasManager.autoAlignDrawing({ preferLandmarks: true });
+        return;
+      } catch (error) {
+        console.warn('Cloud auto align failed; falling back to local.', error);
+      }
     }
 
     const { landmarkDetector } = this.canvasManager;
@@ -1100,7 +1162,7 @@ export class OverlayControls {
     );
     this.canvasManager.render();
     if (adjustedRefPoints?.length && adjustedDrawPoints?.length) {
-      this.canvasManager.autoAlignDrawing();
+      this.canvasManager.autoAlignDrawing({ preferLandmarks: true });
     }
   }
 }
