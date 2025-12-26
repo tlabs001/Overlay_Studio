@@ -18,6 +18,10 @@ export class CanvasManager {
     this.poseLandmarks = null;
     this.landmarkResults = null;
     this.landmarkScore = null;
+    this.showPupils = false;
+    this.showIrises = false;
+    this.poseDensitySubdivisions = 0;
+    this.showPoseSegmentation = false;
     this.overlayColor = 'rgba(64, 86, 148, 0.65)';
     this.sightSizeGridVisible = false;
     this.sightSizeBaseUnit = null;
@@ -161,10 +165,25 @@ export class CanvasManager {
     this.render();
   }
 
-  setPoseLandmarks(referencePoints, drawingPoints, referenceDimensions, drawingDimensions) {
+  setPoseLandmarks(
+    referencePoints,
+    drawingPoints,
+    referenceDimensions,
+    drawingDimensions,
+    referenceSegmentation,
+    drawingSegmentation
+  ) {
     this.poseLandmarks = {
-      reference: { points: referencePoints || [], dimensions: referenceDimensions },
-      drawing: { points: drawingPoints || [], dimensions: drawingDimensions },
+      reference: {
+        points: referencePoints || [],
+        dimensions: referenceDimensions,
+        segmentationMask: referenceSegmentation,
+      },
+      drawing: {
+        points: drawingPoints || [],
+        dimensions: drawingDimensions,
+        segmentationMask: drawingSegmentation,
+      },
     };
     this.render();
   }
@@ -1815,6 +1834,17 @@ export class CanvasManager {
 
     this.drawFaceFeatureHighlights(mappedPoints, drawOptions);
 
+    if (this.showIrises && this.landmarkDetector) {
+      const irisConnections = this.landmarkDetector.getIrisConnections();
+      this.drawIrisConnections(mappedPoints, irisConnections, drawOptions);
+    }
+
+    if (this.showPupils && this.landmarkDetector) {
+      const pupils = this.landmarkDetector.getPupilCenters(mappedPoints);
+      if (pupils?.left) this.drawPupilMarker(pupils.left);
+      if (pupils?.right) this.drawPupilMarker(pupils.right);
+    }
+
     const drawRange = (start, end) => {
       if (mappedPoints.length <= end) return;
       ctx.beginPath();
@@ -1883,7 +1913,128 @@ export class CanvasManager {
     ctx.restore();
   }
 
-  drawPoseLandmarks(points = [], sourceDimensions, options = {}, image = this.referenceImage, providedDimensions) {
+  drawIrisConnections(mappedPoints, irisConnections = {}, drawOptions = {}) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const { left = [], right = [] } = irisConnections;
+    const stroke = drawOptions.strokeStyle || 'rgba(64, 86, 148, 0.85)';
+    const drawSide = (connections, color) => {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      connections.forEach(([a, b]) => {
+        const start = mappedPoints[a];
+        const end = mappedPoints[b];
+        if (!start || !end) return;
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.lineTo(end.x, end.y);
+        ctx.stroke();
+      });
+      ctx.restore();
+    };
+
+    drawSide(left, stroke);
+    drawSide(right, stroke);
+  }
+
+  drawPupilMarker(point) {
+    if (!point || !this.ctx) return;
+    const ctx = this.ctx;
+    const radius = 4;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(point.x - radius - 1, point.y);
+    ctx.lineTo(point.x + radius + 1, point.y);
+    ctx.moveTo(point.x, point.y - radius - 1);
+    ctx.lineTo(point.x, point.y + radius + 1);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  buildDensePosePoints(points = [], connections = [], subdivisions = 0) {
+    if (!points.length || !connections.length || subdivisions <= 0) return [];
+    const densePoints = [];
+    connections.forEach(([a, b]) => {
+      const start = points[a];
+      const end = points[b];
+      if (!start || !end) return;
+      for (let i = 1; i <= subdivisions; i += 1) {
+        const t = i / (subdivisions + 1);
+        densePoints.push({
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * t,
+        });
+      }
+    });
+    return densePoints;
+  }
+
+  drawSegmentationOutline(segmentationMask, image, dimensions = {}) {
+    if (!segmentationMask?.data || !segmentationMask.width || !segmentationMask.height || !this.ctx) return;
+    const ctx = this.ctx;
+    const rect = image === this.drawingImage ? this.getDrawingRect(image) : this.getDrawRect(image);
+    if (!rect?.width || !rect?.height) return;
+
+    const step = Math.max(2, Math.floor(Math.min(segmentationMask.width, segmentationMask.height) / 120));
+    const threshold = 0.5;
+    const edgePoints = [];
+    const { data, width, height } = segmentationMask;
+
+    for (let y = 0; y < height - step; y += step) {
+      for (let x = 0; x < width - step; x += step) {
+        const idx = y * width + x;
+        const value = data[idx];
+        const rightValue = data[idx + step] ?? value;
+        const bottomValue = data[idx + step * width] ?? value;
+        const isInside = value >= threshold;
+        const hasEdge = (rightValue >= threshold) !== isInside || (bottomValue >= threshold) !== isInside;
+        if (hasEdge) {
+          const canvasX = rect.x + (x / width) * rect.width;
+          const canvasY = rect.y + (y / height) * rect.height;
+          edgePoints.push({ x: canvasX, y: canvasY });
+        }
+      }
+    }
+
+    if (!edgePoints.length) return;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    edgePoints.forEach((point, index) => {
+      if (index === 0) {
+        ctx.moveTo(point.x, point.y);
+      } else {
+        ctx.lineTo(point.x, point.y);
+      }
+    });
+    ctx.stroke();
+
+    edgePoints.forEach((point) => {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  drawPoseLandmarks(
+    points = [],
+    sourceDimensions,
+    options = {},
+    image = this.referenceImage,
+    providedDimensions,
+    segmentationMask
+  ) {
     if (!points?.length || !this.ctx) return;
 
     const ctx = this.ctx;
@@ -1895,7 +2046,7 @@ export class CanvasManager {
     const jointColor = options.jointColor || 'rgba(255, 99, 212, 0.95)';
     const skeletonColor = options.skeletonColor || 'rgba(255, 99, 212, 0.6)';
 
-    const connections = [
+    const defaultConnections = [
       [11, 13],
       [13, 15],
       [12, 14],
@@ -1913,6 +2064,7 @@ export class CanvasManager {
       [23, 27],
       [24, 28],
     ];
+    const poseConnections = this.landmarkDetector?.getPoseConnections?.() || defaultConnections;
 
     ctx.save();
     ctx.strokeStyle = skeletonColor;
@@ -1920,7 +2072,7 @@ export class CanvasManager {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
 
-    connections.forEach(([startIdx, endIdx]) => {
+    poseConnections.forEach(([startIdx, endIdx]) => {
       const start = projected[startIdx];
       const end = projected[endIdx];
       if (!start || !end) return;
@@ -1936,6 +2088,20 @@ export class CanvasManager {
       ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    if (this.poseDensitySubdivisions > 0) {
+      const densePoints = this.buildDensePosePoints(projected, poseConnections, this.poseDensitySubdivisions);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      densePoints.forEach((point) => {
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, 2.25, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    if (this.showPoseSegmentation && segmentationMask) {
+      this.drawSegmentationOutline(segmentationMask, image, dimensions);
+    }
 
     ctx.restore();
   }
@@ -2012,7 +2178,7 @@ export class CanvasManager {
 
     if (this.poseLandmarks) {
       const { reference, drawing } = this.poseLandmarks;
-      this.drawPoseLandmarks(reference?.points, reference?.dimensions);
+      this.drawPoseLandmarks(reference?.points, reference?.dimensions, {}, this.referenceImage, undefined, reference?.segmentationMask);
       if (drawing?.points?.length) {
         this.drawPoseLandmarks(
           drawing.points,
@@ -2021,7 +2187,9 @@ export class CanvasManager {
             jointColor: 'rgba(255, 99, 71, 0.95)',
             skeletonColor: 'rgba(255, 99, 71, 0.5)',
           },
-          this.drawingImage || this.referenceImage
+          this.drawingImage || this.referenceImage,
+          undefined,
+          drawing?.segmentationMask
         );
         this.drawLandmarkComparison(
           reference?.points,

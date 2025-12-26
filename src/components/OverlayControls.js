@@ -26,6 +26,10 @@ export class OverlayControls {
       bodyBtn: document.getElementById('bodyTool'),
       poseModelSelect: document.getElementById('poseModelQuality'),
       poseModelStatus: document.getElementById('poseModelStatus'),
+      togglePupils: document.getElementById('togglePupils'),
+      toggleIrises: document.getElementById('toggleIrises'),
+      poseDensity: document.getElementById('poseDensity'),
+      toggleSegmentation: document.getElementById('toggleSegmentation'),
       refOutlineBtn: document.getElementById('refOutlineTool'),
       drawOutlineBtn: document.getElementById('drawOutlineTool'),
       bothOutlineBtn: document.getElementById('bothOutlineTool'),
@@ -243,6 +247,10 @@ export class OverlayControls {
       bodyBtn,
       poseModelSelect,
       poseModelStatus,
+      togglePupils,
+      toggleIrises,
+      poseDensity,
+      toggleSegmentation,
       refOutlineBtn,
       drawOutlineBtn,
       bothOutlineBtn,
@@ -322,6 +330,61 @@ export class OverlayControls {
 
     if (this.canvasManager?.landmarkDetector) {
       applyPoseModelQuality(savedPoseModelQuality);
+    }
+
+    const savedShowPupils = localStorage.getItem('overlay.showPupils') === 'true';
+    const savedShowIrises = localStorage.getItem('overlay.showIrises') === 'true';
+    const savedPoseDensity = Number(localStorage.getItem('overlay.poseDensity') || '0');
+    const savedShowSegmentation = localStorage.getItem('overlay.showSegmentation') === 'true';
+
+    if (togglePupils) {
+      togglePupils.checked = savedShowPupils;
+      this.canvasManager.showPupils = savedShowPupils;
+      togglePupils.addEventListener('change', () => {
+        const enabled = Boolean(togglePupils.checked);
+        this.canvasManager.showPupils = enabled;
+        localStorage.setItem('overlay.showPupils', enabled);
+        this.canvasManager.render();
+      });
+    }
+
+    if (toggleIrises) {
+      toggleIrises.checked = savedShowIrises;
+      this.canvasManager.showIrises = savedShowIrises;
+      toggleIrises.addEventListener('change', () => {
+        const enabled = Boolean(toggleIrises.checked);
+        this.canvasManager.showIrises = enabled;
+        localStorage.setItem('overlay.showIrises', enabled);
+        this.canvasManager.render();
+      });
+    }
+
+    if (poseDensity) {
+      poseDensity.value = savedPoseDensity.toString();
+      this.canvasManager.poseDensitySubdivisions = Number(poseDensity.value) || 0;
+      poseDensity.addEventListener('change', () => {
+        const density = Number(poseDensity.value) || 0;
+        this.canvasManager.poseDensitySubdivisions = density;
+        localStorage.setItem('overlay.poseDensity', density.toString());
+        this.canvasManager.render();
+      });
+    }
+
+    if (toggleSegmentation) {
+      toggleSegmentation.checked = savedShowSegmentation;
+      this.canvasManager.showPoseSegmentation = savedShowSegmentation;
+      toggleSegmentation.addEventListener('change', async () => {
+        const enabled = Boolean(toggleSegmentation.checked);
+        this.canvasManager.showPoseSegmentation = enabled;
+        localStorage.setItem('overlay.showSegmentation', enabled);
+        if (this.canvasManager?.landmarkDetector) {
+          await this.canvasManager.landmarkDetector.setOutputSegmentationMasks(enabled);
+        }
+        this.canvasManager.render();
+      });
+      if (this.canvasManager?.landmarkDetector && savedShowSegmentation) {
+        this.canvasManager.landmarkDetector.setOutputSegmentationMasks(true);
+      }
     }
 
     const updateBaseUnitDrawingToggle = () => {
@@ -818,7 +881,12 @@ export class OverlayControls {
 
     if (!usedLandmarks) {
       try {
-        const { refPoints, drawPoints } = await landmarkDetector.detectPosePairs(
+        const {
+          refPoints,
+          drawPoints,
+          refSegmentationMask,
+          drawSegmentationMask,
+        } = await landmarkDetector.detectPosePairs(
           referenceBitmap,
           drawingBitmap,
           {
@@ -830,7 +898,14 @@ export class OverlayControls {
         );
 
         if (refPoints?.length && drawPoints?.length) {
-          this.canvasManager.setPoseLandmarks(refPoints, drawPoints, refDimensions, drawingDimensions);
+          this.canvasManager.setPoseLandmarks(
+            refPoints,
+            drawPoints,
+            refDimensions,
+            drawingDimensions,
+            refSegmentationMask,
+            drawSegmentationMask
+          );
           usedLandmarks = true;
         } else {
           console.warn('Pose landmarks not available for auto align.');
@@ -862,7 +937,12 @@ export class OverlayControls {
     const drawingBitmap = await this.toImageBitmap(this.canvasManager.drawingImage);
     const refDimensions = this.canvasManager.getImageDimensions(this.canvasManager.referenceImage);
     const drawingDimensions = this.canvasManager.getImageDimensions(this.canvasManager.drawingImage);
-    const { refPoints, drawPoints } = await this.canvasManager.landmarkDetector.detectPosePairs(
+    const {
+      refPoints,
+      drawPoints,
+      refSegmentationMask,
+      drawSegmentationMask,
+    } = await this.canvasManager.landmarkDetector.detectPosePairs(
       referenceBitmap,
       drawingBitmap,
       {
@@ -885,7 +965,14 @@ export class OverlayControls {
       console.warn('No body landmarks detected on the drawing image.');
     }
 
-    this.canvasManager.setPoseLandmarks(refPoints, drawPoints, refDimensions, drawingDimensions);
+    this.canvasManager.setPoseLandmarks(
+      refPoints,
+      drawPoints,
+      refDimensions,
+      drawingDimensions,
+      refSegmentationMask,
+      drawSegmentationMask
+    );
     this.canvasManager.render();
     if (refPoints?.length && drawPoints?.length) {
       this.canvasManager.autoAlignDrawing();
