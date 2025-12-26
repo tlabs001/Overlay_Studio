@@ -35,6 +35,10 @@ export class CanvasManager {
     this.traceOpacity = 0.4;
     this.traceStrokes = [];
     this.activeTraceStroke = null;
+    this.analysisSelection = null;
+    this.analysisSelectionMode = false;
+    this.analysisSelectionDraft = null;
+    this.analysisSelectionChangeHandler = null;
     this.viewMode = 'normal';
     this.baseUnitAnchor = null;
     this.baseOutlineShowDrawing = true;
@@ -159,6 +163,47 @@ export class CanvasManager {
 
   setMeasurementTool(tool) {
     this.measurementTool = tool || null;
+  }
+
+  setAnalysisSelectionListener(callback) {
+    this.analysisSelectionChangeHandler = typeof callback === 'function' ? callback : null;
+  }
+
+  notifyAnalysisSelectionChange() {
+    if (typeof this.analysisSelectionChangeHandler === 'function') {
+      this.analysisSelectionChangeHandler(this.analysisSelection);
+    }
+  }
+
+  beginAnalysisSelection() {
+    this.analysisSelectionMode = true;
+    this.analysisSelectionDraft = null;
+    this.analysisSelection = null;
+    this.notifyAnalysisSelectionChange();
+    this.render();
+  }
+
+  cancelAnalysisSelection() {
+    this.analysisSelectionMode = false;
+    this.analysisSelectionDraft = null;
+    this.notifyAnalysisSelectionChange();
+    this.render();
+  }
+
+  clearAnalysisSelection() {
+    this.analysisSelectionMode = false;
+    this.analysisSelectionDraft = null;
+    this.analysisSelection = null;
+    this.notifyAnalysisSelectionChange();
+    this.render();
+  }
+
+  isSelectingAnalysisArea() {
+    return this.analysisSelectionMode;
+  }
+
+  hasAnalysisSelection() {
+    return Boolean(this.analysisSelection?.radius);
   }
 
   setFaceLandmarks(referencePoints, drawingPoints, referenceDimensions, drawingDimensions) {
@@ -297,6 +342,18 @@ export class CanvasManager {
 
     if (this.isPlacingVanishingPoints) return;
 
+    if (this.analysisSelectionMode) {
+      const point = this.getPointerPosition(event);
+      this.analysisSelectionDraft = { pointerId: event.pointerId, center: point };
+      this.analysisSelection = { center: point, radius: 0 };
+      this.notifyAnalysisSelectionChange();
+      this.canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      event.stopPropagation();
+      this.render();
+      return;
+    }
+
     if (
       this.drawingAdjustmentEnabled &&
       this.drawingImage &&
@@ -372,6 +429,18 @@ export class CanvasManager {
       return;
     }
 
+    if (this.analysisSelectionDraft && event.pointerId === this.analysisSelectionDraft.pointerId) {
+      const point = this.getPointerPosition(event);
+      const center = this.analysisSelectionDraft.center;
+      const radius = Math.max(4, Math.hypot(point.x - center.x, point.y - center.y));
+      this.analysisSelection = { center, radius };
+      this.notifyAnalysisSelectionChange();
+      this.render();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     if (this.drawingResizeState && event.pointerId === this.drawingResizeState.pointerId) {
       const point = this.getPointerPosition(event);
       const baseRect = this.getDrawRect(this.drawingImage);
@@ -425,6 +494,15 @@ export class CanvasManager {
 
   handleOverlayPointerUp(event) {
     if (this.measurementTool?.gestureDrawingEnabled) {
+      return;
+    }
+
+    if (this.analysisSelectionDraft && event.pointerId === this.analysisSelectionDraft.pointerId) {
+      this.canvas.releasePointerCapture(event.pointerId);
+      this.analysisSelectionMode = false;
+      this.analysisSelectionDraft = null;
+      this.notifyAnalysisSelectionChange();
+      this.render();
       return;
     }
 
@@ -938,6 +1016,39 @@ export class CanvasManager {
     return { x, y, width, height };
   }
 
+  getAnalysisCrop(image, options = {}) {
+    const { useDrawingRect = false } = options;
+    if (!this.analysisSelection?.radius || !image) return null;
+
+    const rect = useDrawingRect ? this.getDrawingRect(image) : this.getDrawRect(image);
+    const dimensions = this.getImageDimensions(image);
+    if (!rect?.width || !rect?.height || !dimensions.width || !dimensions.height) return null;
+
+    const { center, radius } = this.analysisSelection;
+    const scaleX = dimensions.width / rect.width;
+    const scaleY = dimensions.height / rect.height;
+    const scaledRadius = Math.max(radius * scaleX, radius * scaleY);
+
+    const mappedCenter = {
+      x: (center.x - rect.x) * scaleX,
+      y: (center.y - rect.y) * scaleY,
+    };
+
+    const x = Math.max(0, mappedCenter.x - scaledRadius);
+    const y = Math.max(0, mappedCenter.y - scaledRadius);
+    const width = Math.min(dimensions.width - x, scaledRadius * 2);
+    const height = Math.min(dimensions.height - y, scaledRadius * 2);
+
+    if (width <= 0 || height <= 0) return null;
+
+    return {
+      x: Math.floor(x),
+      y: Math.floor(y),
+      width: Math.max(1, Math.round(width)),
+      height: Math.max(1, Math.round(height)),
+    };
+  }
+
   resetDrawingTransform() {
     this.drawingTransform = { offsetX: 0, offsetY: 0, scale: 1 };
   }
@@ -1287,6 +1398,27 @@ export class CanvasManager {
       }
       this.ctx.stroke();
     });
+    this.ctx.restore();
+  }
+
+  drawAnalysisSelection() {
+    if (!this.ctx || !this.analysisSelection?.center || !this.analysisSelection?.radius) return;
+    const { center, radius } = this.analysisSelection;
+    if (radius <= 0) return;
+
+    this.ctx.save();
+    this.ctx.strokeStyle = 'rgba(0, 199, 190, 0.95)';
+    this.ctx.fillStyle = 'rgba(0, 199, 190, 0.12)';
+    this.ctx.lineWidth = 2.2;
+    this.ctx.setLineDash([6, 6]);
+    this.ctx.beginPath();
+    this.ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    this.ctx.fill();
+    this.ctx.stroke();
+    this.ctx.setLineDash([]);
+    this.ctx.fillStyle = 'rgba(0, 199, 190, 0.9)';
+    this.ctx.font = '13px Arial';
+    this.ctx.fillText('Analysis area', center.x + radius + 10, center.y + 4);
     this.ctx.restore();
   }
 
@@ -2060,7 +2192,15 @@ export class CanvasManager {
     const step = Math.max(2, Math.floor(Math.min(segmentationMask.width, segmentationMask.height) / 120));
     const threshold = 0.5;
     const edgePoints = [];
-    const { data, width, height } = segmentationMask;
+    const {
+      data,
+      width,
+      height,
+      offsetX = 0,
+      offsetY = 0,
+      fullWidth = dimensions?.width || segmentationMask.fullWidth || segmentationMask.width,
+      fullHeight = dimensions?.height || segmentationMask.fullHeight || segmentationMask.height,
+    } = segmentationMask;
 
     for (let y = 0; y < height - step; y += step) {
       for (let x = 0; x < width - step; x += step) {
@@ -2071,8 +2211,8 @@ export class CanvasManager {
         const isInside = value >= threshold;
         const hasEdge = (rightValue >= threshold) !== isInside || (bottomValue >= threshold) !== isInside;
         if (hasEdge) {
-          const canvasX = rect.x + (x / width) * rect.width;
-          const canvasY = rect.y + (y / height) * rect.height;
+          const canvasX = rect.x + ((x + offsetX) / fullWidth) * rect.width;
+          const canvasY = rect.y + ((y + offsetY) / fullHeight) * rect.height;
           edgePoints.push({ x: canvasX, y: canvasY });
         }
       }
@@ -2578,6 +2718,7 @@ export class CanvasManager {
       );
       this.ctx.restore();
     }
+    this.drawAnalysisSelection();
     this.drawGestureLine(rect);
     this.drawLandmarkComparisons(rect);
     this.drawDetectedLandmarks();

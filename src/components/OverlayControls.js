@@ -22,6 +22,7 @@ export class OverlayControls {
       gridBtn: document.getElementById('gridTool'),
       sightSizeGridBtn: document.getElementById('sightSizeGridTool'),
       ghostBtn: document.getElementById('ghostTool'),
+      analysisSelectBtn: document.getElementById('analysisSelectTool'),
       faceBtn: document.getElementById('faceTool'),
       bodyBtn: document.getElementById('bodyTool'),
       poseModelSelect: document.getElementById('poseModelQuality'),
@@ -234,6 +235,81 @@ export class OverlayControls {
     }
   }
 
+  async cropBitmap(bitmap, crop) {
+    if (!bitmap || !crop) return bitmap;
+    const x = Math.max(0, Math.floor(crop.x || 0));
+    const y = Math.max(0, Math.floor(crop.y || 0));
+    const width = Math.max(1, Math.floor(crop.width || 0));
+    const height = Math.max(1, Math.floor(crop.height || 0));
+
+    try {
+      return await createImageBitmap(bitmap, x, y, width, height);
+    } catch (error) {
+      console.warn('Bitmap crop failed; falling back to canvas.', error);
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, x, y, width, height, 0, 0, width, height);
+
+    try {
+      return await createImageBitmap(canvas);
+    } catch (error) {
+      console.warn('createImageBitmap unavailable on cropped canvas; returning image element.', error);
+      const image = new Image();
+      image.src = canvas.toDataURL('image/png');
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+      });
+      return image;
+    }
+  }
+
+  applyAnalysisOffset(points = [], offset = { x: 0, y: 0 }) {
+    if (!points?.length || (!offset.x && !offset.y)) return points || [];
+    return points.map((point) => ({ ...point, x: point.x + offset.x, y: point.y + offset.y }));
+  }
+
+  normalizeSegmentationMask(mask, offset = { x: 0, y: 0 }, dimensions = { width: 0, height: 0 }) {
+    if (!mask) return null;
+    const { width: fullWidth, height: fullHeight } = dimensions;
+    return {
+      ...mask,
+      offsetX: offset.x || 0,
+      offsetY: offset.y || 0,
+      fullWidth: fullWidth || mask.fullWidth || mask.width,
+      fullHeight: fullHeight || mask.fullHeight || mask.height,
+    };
+  }
+
+  async getAnalysisInput(image, options = {}) {
+    const { isDrawing = false } = options;
+    const originalDimensions = this.canvasManager.getImageDimensions(image);
+    const crop = this.canvasManager.getAnalysisCrop?.(image, { useDrawingRect: isDrawing });
+    const baseBitmap = await this.toImageBitmap(image);
+
+    if (!crop || !baseBitmap) {
+      return {
+        bitmap: baseBitmap,
+        detectionDimensions: originalDimensions,
+        originalDimensions,
+        offset: { x: 0, y: 0 },
+      };
+    }
+
+    const croppedBitmap = await this.cropBitmap(baseBitmap, crop);
+
+    return {
+      bitmap: croppedBitmap,
+      detectionDimensions: { width: crop.width, height: crop.height },
+      originalDimensions,
+      offset: { x: crop.x, y: crop.y },
+    };
+  }
+
   attachButtonHandlers(els = {}) {
     const {
       uploadBtn,
@@ -243,6 +319,7 @@ export class OverlayControls {
       gridBtn,
       sightSizeGridBtn,
       ghostBtn,
+      analysisSelectBtn,
       faceBtn,
       bodyBtn,
       poseModelSelect,
@@ -386,6 +463,24 @@ export class OverlayControls {
         this.canvasManager.landmarkDetector.setOutputSegmentationMasks(true);
       }
     }
+
+    const updateAnalysisSelectBtn = () => {
+      if (!analysisSelectBtn) return;
+      if (this.canvasManager.isSelectingAnalysisArea()) {
+        analysisSelectBtn.textContent = 'Selecting area…';
+        analysisSelectBtn.classList.add('active');
+        return;
+      }
+      if (this.canvasManager.hasAnalysisSelection()) {
+        analysisSelectBtn.textContent = 'Clear selection';
+        analysisSelectBtn.classList.add('active');
+      } else {
+        analysisSelectBtn.textContent = 'Select Area';
+        analysisSelectBtn.classList.remove('active');
+      }
+    };
+
+    this.canvasManager.setAnalysisSelectionListener?.(() => updateAnalysisSelectBtn());
 
     const updateBaseUnitDrawingToggle = () => {
       if (warnMissing(baseUnitDrawingToggleBtn, 'base unit drawing toggle button')) return;
@@ -611,6 +706,21 @@ export class OverlayControls {
       });
     }
 
+    if (analysisSelectBtn) {
+      analysisSelectBtn.addEventListener('click', () => {
+        if (this.canvasManager.isSelectingAnalysisArea()) {
+          this.canvasManager.cancelAnalysisSelection();
+        } else if (this.canvasManager.hasAnalysisSelection()) {
+          this.canvasManager.clearAnalysisSelection();
+        } else {
+          this.canvasManager.beginAnalysisSelection();
+        }
+        updateAnalysisSelectBtn();
+        this.closePanel();
+      });
+      updateAnalysisSelectBtn();
+    }
+
     if (faceBtn) {
       faceBtn.addEventListener('click', async () => {
         await this.handleFaceDetection();
@@ -801,36 +911,43 @@ export class OverlayControls {
       return;
     }
 
-    const referenceBitmap = await this.toImageBitmap(this.canvasManager.referenceImage);
-    const drawingBitmap = await this.toImageBitmap(this.canvasManager.drawingImage);
-    const refDimensions = this.canvasManager.getImageDimensions(this.canvasManager.referenceImage);
-    const drawingDimensions = this.canvasManager.getImageDimensions(this.canvasManager.drawingImage);
+    const referenceInput = await this.getAnalysisInput(this.canvasManager.referenceImage);
+    const drawingInput = await this.getAnalysisInput(this.canvasManager.drawingImage, { isDrawing: true });
+
     const { refPoints, drawPoints } = await this.canvasManager.landmarkDetector.detectFacePairs(
-      referenceBitmap,
-      drawingBitmap,
+      referenceInput.bitmap,
+      drawingInput.bitmap,
       {
-        refWidth: refDimensions.width,
-        refHeight: refDimensions.height,
-        drawWidth: drawingDimensions.width,
-        drawHeight: drawingDimensions.height,
+        refWidth: referenceInput.detectionDimensions.width,
+        refHeight: referenceInput.detectionDimensions.height,
+        drawWidth: drawingInput.detectionDimensions.width,
+        drawHeight: drawingInput.detectionDimensions.height,
       }
     );
 
-    if (!refPoints?.length && !drawPoints?.length) {
+    const adjustedRefPoints = this.applyAnalysisOffset(refPoints, referenceInput.offset);
+    const adjustedDrawPoints = this.applyAnalysisOffset(drawPoints, drawingInput.offset);
+
+    if (!adjustedRefPoints?.length && !adjustedDrawPoints?.length) {
       window.alert('No face landmarks detected.');
       return;
     }
 
-    if (!refPoints?.length) {
+    if (!adjustedRefPoints?.length) {
       console.warn('No face landmarks detected on the reference image.');
     }
-    if (this.canvasManager.drawingImage && !drawPoints?.length) {
+    if (this.canvasManager.drawingImage && !adjustedDrawPoints?.length) {
       console.warn('No face landmarks detected on the drawing image.');
     }
 
-    this.canvasManager.setFaceLandmarks(refPoints, drawPoints, refDimensions, drawingDimensions);
+    this.canvasManager.setFaceLandmarks(
+      adjustedRefPoints,
+      adjustedDrawPoints,
+      referenceInput.originalDimensions,
+      drawingInput.originalDimensions
+    );
     this.canvasManager.render();
-    if (refPoints?.length && drawPoints?.length) {
+    if (adjustedRefPoints?.length && adjustedDrawPoints?.length) {
       this.canvasManager.autoAlignDrawing();
     }
   }
@@ -930,48 +1047,59 @@ export class OverlayControls {
       return;
     }
 
-    const referenceBitmap = await this.toImageBitmap(this.canvasManager.referenceImage);
-    const drawingBitmap = await this.toImageBitmap(this.canvasManager.drawingImage);
-    const refDimensions = this.canvasManager.getImageDimensions(this.canvasManager.referenceImage);
-    const drawingDimensions = this.canvasManager.getImageDimensions(this.canvasManager.drawingImage);
+    const referenceInput = await this.getAnalysisInput(this.canvasManager.referenceImage);
+    const drawingInput = await this.getAnalysisInput(this.canvasManager.drawingImage, { isDrawing: true });
     const {
       refPoints,
       drawPoints,
       refSegmentationMask,
       drawSegmentationMask,
     } = await this.canvasManager.landmarkDetector.detectPosePairs(
-      referenceBitmap,
-      drawingBitmap,
+      referenceInput.bitmap,
+      drawingInput.bitmap,
       {
-        refWidth: refDimensions.width,
-        refHeight: refDimensions.height,
-        drawWidth: drawingDimensions.width,
-        drawHeight: drawingDimensions.height,
+        refWidth: referenceInput.detectionDimensions.width,
+        refHeight: referenceInput.detectionDimensions.height,
+        drawWidth: drawingInput.detectionDimensions.width,
+        drawHeight: drawingInput.detectionDimensions.height,
       }
     );
 
-    if (!refPoints?.length && !drawPoints?.length) {
+    const adjustedRefPoints = this.applyAnalysisOffset(refPoints, referenceInput.offset);
+    const adjustedDrawPoints = this.applyAnalysisOffset(drawPoints, drawingInput.offset);
+    const normalizedRefMask = this.normalizeSegmentationMask(
+      refSegmentationMask,
+      referenceInput.offset,
+      referenceInput.originalDimensions
+    );
+    const normalizedDrawMask = this.normalizeSegmentationMask(
+      drawSegmentationMask,
+      drawingInput.offset,
+      drawingInput.originalDimensions
+    );
+
+    if (!adjustedRefPoints?.length && !adjustedDrawPoints?.length) {
       window.alert('No body landmarks detected.');
       return;
     }
 
-    if (!refPoints?.length) {
+    if (!adjustedRefPoints?.length) {
       console.warn('No body landmarks detected on the reference image.');
     }
-    if (this.canvasManager.drawingImage && !drawPoints?.length) {
+    if (this.canvasManager.drawingImage && !adjustedDrawPoints?.length) {
       console.warn('No body landmarks detected on the drawing image.');
     }
 
     this.canvasManager.setPoseLandmarks(
-      refPoints,
-      drawPoints,
-      refDimensions,
-      drawingDimensions,
-      refSegmentationMask,
-      drawSegmentationMask
+      adjustedRefPoints,
+      adjustedDrawPoints,
+      referenceInput.originalDimensions,
+      drawingInput.originalDimensions,
+      normalizedRefMask,
+      normalizedDrawMask
     );
     this.canvasManager.render();
-    if (refPoints?.length && drawPoints?.length) {
+    if (adjustedRefPoints?.length && adjustedDrawPoints?.length) {
       this.canvasManager.autoAlignDrawing();
     }
   }
