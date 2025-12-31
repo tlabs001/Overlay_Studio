@@ -34,6 +34,8 @@ export class OverlayControls {
       refOutlineBtn: document.getElementById('refOutlineTool'),
       drawOutlineBtn: document.getElementById('drawOutlineTool'),
       bothOutlineBtn: document.getElementById('bothOutlineTool'),
+      outlineAssistBtn: document.getElementById('outlineAssistTool'),
+      outlineAssistReadout: document.getElementById('outlineAssistReadout'),
       baseUnitOutlineBtn: document.getElementById('baseUnitOutlineTool'),
       baseUnitDrawingToggleBtn: document.getElementById('baseUnitDrawingToggleTool'),
       normalViewBtn: document.getElementById('normalViewTool'),
@@ -365,6 +367,8 @@ export class OverlayControls {
       refOutlineBtn,
       drawOutlineBtn,
       bothOutlineBtn,
+      outlineAssistBtn,
+      outlineAssistReadout,
       baseUnitOutlineBtn,
       baseUnitDrawingToggleBtn,
       normalViewBtn,
@@ -404,6 +408,40 @@ export class OverlayControls {
       }
       return false;
     };
+
+    const outlineButtons = [refOutlineBtn, drawOutlineBtn, bothOutlineBtn, outlineAssistBtn];
+    const setActiveOutlineButton = (activeBtn) => {
+      outlineButtons.forEach((btn) => {
+        if (!btn) return;
+        btn.classList.toggle('active', btn === activeBtn);
+      });
+    };
+
+    const updateOutlineAssistReadout = () => {
+      if (!outlineAssistReadout) return;
+      const enabled = !!this.canvasManager?.outlineAssistEnabled;
+      const aligned = !!this.canvasManager?.outlineAssistAligned;
+      const score = enabled ? this.canvasManager?.outlineAssistLastScore ?? 0 : null;
+      const scoreText = typeof score === 'number' && !Number.isNaN(score) ? score.toFixed(2) : '--';
+      outlineAssistReadout.textContent = enabled
+        ? `Alignment: ${scoreText}${aligned ? ' (Aligned)' : ''}`
+        : 'Alignment: --';
+      outlineAssistReadout.classList.toggle('aligned', enabled && aligned);
+    };
+
+    const setOutlineAssistMode = (activeBtn, enabled) => {
+      this.canvasManager?.setOutlineAssistEnabled?.(enabled);
+      setActiveOutlineButton(activeBtn || null);
+      updateOutlineAssistReadout();
+    };
+
+    const attachAssistListener = () => {
+      if (!this.canvasManager?.setOutlineAssistScoreListener) return;
+      this.canvasManager.setOutlineAssistScoreListener(() => updateOutlineAssistReadout());
+      updateOutlineAssistReadout();
+    };
+
+    attachAssistListener();
 
     const savedPoseModelQuality = localStorage.getItem('overlay.poseModelQuality') || 'full';
     if (poseModelSelect) {
@@ -664,6 +702,7 @@ export class OverlayControls {
           return;
         }
         this.canvasManager.renderReferenceAsOutline();
+        setOutlineAssistMode(refOutlineBtn, false);
         this.closePanel();
       });
     }
@@ -675,6 +714,7 @@ export class OverlayControls {
           return;
         }
         this.canvasManager.renderDrawingAsOutline();
+        setOutlineAssistMode(drawOutlineBtn, false);
         this.closePanel();
       });
     }
@@ -686,6 +726,19 @@ export class OverlayControls {
           return;
         }
         this.canvasManager.renderBothAsOutlines();
+        setOutlineAssistMode(bothOutlineBtn, false);
+        this.closePanel();
+      });
+    }
+
+    if (outlineAssistBtn) {
+      outlineAssistBtn.addEventListener('click', () => {
+        if (!this.canvasManager.referenceImage || !this.canvasManager.drawingImage) {
+          window.alert('Load both reference and drawing images first.');
+          return;
+        }
+        this.canvasManager.renderBothAsOutlines();
+        setOutlineAssistMode(outlineAssistBtn, true);
         this.closePanel();
       });
     }
@@ -696,6 +749,7 @@ export class OverlayControls {
           window.alert('Load a reference image first.');
           return;
         }
+        setOutlineAssistMode(null, false);
         this.canvasManager.setViewMode('base-unit-outline');
         updateBaseUnitDrawingToggle();
         this.closePanel();
@@ -713,6 +767,7 @@ export class OverlayControls {
 
     if (normalViewBtn) {
       normalViewBtn.addEventListener('click', () => {
+        setOutlineAssistMode(null, false);
         this.canvasManager.resetToNormalRender();
         this.canvasManager.clearDifferenceLayer();
         this.updateCritiqueSummary(null);

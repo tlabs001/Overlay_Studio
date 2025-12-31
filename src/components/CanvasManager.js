@@ -62,6 +62,13 @@ export class CanvasManager {
     this.drawingDragState = null;
     this.cloudAiEnabled = false;
     this.cloudVision = null;
+    this.outlineAssistEnabled = false;
+    this.outlineAssistAligned = false;
+    this.outlineAssistThreshold = 0.78;
+    this.outlineAssistLastScore = 0;
+    this.outlineAssistLastComputedAt = 0;
+    this.outlineAssistScoreListener = null;
+    this.renderRaf = null;
 
     this.measurementTool = null;
     this.resizeObserver = null;
@@ -808,6 +815,16 @@ export class CanvasManager {
     this.posterizedLayer = null;
   }
 
+  requestRender() {
+    if (this.renderRaf) {
+      cancelAnimationFrame(this.renderRaf);
+    }
+    this.renderRaf = requestAnimationFrame(() => {
+      this.render();
+      this.renderRaf = null;
+    });
+  }
+
   resetToNormalRender() {
     this.viewMode = 'normal';
     if (!this.ctx) return;
@@ -818,6 +835,24 @@ export class CanvasManager {
   setViewMode(mode = 'normal') {
     this.viewMode = mode;
     this.render();
+  }
+
+  setOutlineAssistEnabled(on) {
+    this.outlineAssistEnabled = !!on;
+    if (!this.outlineAssistEnabled) {
+      this.updateOutlineAssistState(0, false);
+    }
+    this.requestRender();
+  }
+
+  setOutlineAssistThreshold(value = this.outlineAssistThreshold) {
+    const numeric = Number(value);
+    if (Number.isNaN(numeric)) return;
+    this.outlineAssistThreshold = Math.min(1, Math.max(0, numeric));
+  }
+
+  setOutlineAssistScoreListener(callback) {
+    this.outlineAssistScoreListener = typeof callback === 'function' ? callback : null;
   }
 
   toggleBaseOutlineDrawing() {
@@ -1646,6 +1681,102 @@ export class CanvasManager {
     return layer;
   }
 
+  createOutlineCanvasFromData(outlineData, rect, color) {
+    if (!outlineData || !rect) return null;
+    const tinted = this.tintOutline(outlineData, color);
+    const layer = document.createElement('canvas');
+    layer.width = rect.width;
+    layer.height = rect.height;
+    layer.getContext('2d').putImageData(tinted, 0, 0);
+    return layer;
+  }
+
+  createMaskFromOutline(outlineData) {
+    if (!outlineData) return null;
+    const { width, height, data } = outlineData;
+    const mask = new Uint8ClampedArray(data.length);
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = data[i] > 0 ? 255 : 0;
+      mask[i] = 0;
+      mask[i + 1] = 0;
+      mask[i + 2] = 0;
+      mask[i + 3] = alpha;
+    }
+    return new ImageData(mask, width, height);
+  }
+
+  drawOutlineMask(ctx, outlineData, rect) {
+    if (!ctx || !outlineData || !rect) return;
+    const mask = this.createMaskFromOutline(outlineData);
+    ctx.putImageData(mask, rect.x, rect.y);
+  }
+
+  updateOutlineAssistState(score = 0, aligned = false) {
+    const clampedScore = Number.isFinite(score) ? Math.min(1, Math.max(0, score)) : 0;
+    this.outlineAssistLastScore = clampedScore;
+    this.outlineAssistAligned = aligned;
+    if (typeof this.outlineAssistScoreListener === 'function') {
+      this.outlineAssistScoreListener({ score: this.outlineAssistLastScore, aligned: this.outlineAssistAligned });
+    }
+  }
+
+  computeOutlineAssistScore(referenceOutline, drawingOutline, referenceRect, drawingRect) {
+    if (!this.outlineAssistEnabled || !this.canvas) return this.outlineAssistLastScore;
+    const now = performance.now();
+    if (this.outlineAssistLastComputedAt && now - this.outlineAssistLastComputedAt < 100) {
+      return this.outlineAssistLastScore;
+    }
+
+    if (!referenceOutline || !drawingOutline || !referenceRect || !drawingRect) {
+      this.outlineAssistLastComputedAt = now;
+      this.updateOutlineAssistState(0, false);
+      return 0;
+    }
+
+    const maxSide = 512;
+    const scale = Math.min(maxSide / this.canvas.width, maxSide / this.canvas.height, 1);
+    const width = Math.max(1, Math.round(this.canvas.width * scale));
+    const height = Math.max(1, Math.round(this.canvas.height * scale));
+
+    const refMaskCanvas = document.createElement('canvas');
+    refMaskCanvas.width = width;
+    refMaskCanvas.height = height;
+    const refCtx = refMaskCanvas.getContext('2d');
+
+    const drawMaskCanvas = document.createElement('canvas');
+    drawMaskCanvas.width = width;
+    drawMaskCanvas.height = height;
+    const drawCtx = drawMaskCanvas.getContext('2d');
+
+    refCtx.save();
+    refCtx.scale(scale, scale);
+    this.drawOutlineMask(refCtx, referenceOutline, referenceRect);
+    refCtx.restore();
+
+    drawCtx.save();
+    drawCtx.scale(scale, scale);
+    this.drawOutlineMask(drawCtx, drawingOutline, drawingRect);
+    drawCtx.restore();
+
+    const refData = refCtx.getImageData(0, 0, width, height).data;
+    const drawData = drawCtx.getImageData(0, 0, width, height).data;
+
+    let intersection = 0;
+    let union = 0;
+    for (let i = 3; i < refData.length; i += 4) {
+      const refOn = refData[i] > 0;
+      const drawOn = drawData[i] > 0;
+      if (refOn && drawOn) intersection += 1;
+      if (refOn || drawOn) union += 1;
+    }
+
+    const score = union > 0 ? intersection / union : 0;
+    const aligned = score >= this.outlineAssistThreshold;
+    this.outlineAssistLastComputedAt = now;
+    this.updateOutlineAssistState(score, aligned);
+    return score;
+  }
+
   clearForOutlineMode() {
     if (!this.ctx) return;
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -1706,13 +1837,35 @@ export class CanvasManager {
     const referenceRect = this.referenceImage ? this.getDrawRect(this.referenceImage) : null;
     const drawingRect = this.drawingImage ? this.getDrawingRect(this.drawingImage) : null;
 
+    const usingOutlineAssist = this.outlineAssistEnabled && this.viewMode === 'both-outlines';
+
+    const referenceOutlineData =
+      this.referenceImage && referenceRect ? this.getOutlineDataForImage(this.referenceImage, referenceRect) : null;
+    const drawingOutlineData =
+      this.drawingImage && drawingRect ? this.getOutlineDataForImage(this.drawingImage, drawingRect) : null;
+
+    if (usingOutlineAssist) {
+      this.computeOutlineAssistScore(referenceOutlineData, drawingOutlineData, referenceRect, drawingRect);
+    }
+
+    const referenceColor = usingOutlineAssist
+      ? this.outlineAssistAligned
+        ? { r: 34, g: 197, b: 94 }
+        : { r: 239, g: 68, b: 68 }
+      : { r: 0, g: 160, b: 255 };
+    const drawingColor = usingOutlineAssist
+      ? this.outlineAssistAligned
+        ? { r: 34, g: 197, b: 94 }
+        : { r: 59, g: 130, b: 246 }
+      : { r: 255, g: 80, b: 80 };
+
     const referenceOutline =
-      this.referenceImage && referenceRect
-        ? this.createOutlineLayer(this.referenceImage, referenceRect, { r: 0, g: 160, b: 255 })
+      this.referenceImage && referenceRect && referenceOutlineData
+        ? this.createOutlineCanvasFromData(referenceOutlineData, referenceRect, referenceColor)
         : null;
     const drawingOutline =
-      this.drawingImage && drawingRect
-        ? this.createOutlineLayer(this.drawingImage, drawingRect, { r: 255, g: 80, b: 80 })
+      this.drawingImage && drawingRect && drawingOutlineData
+        ? this.createOutlineCanvasFromData(drawingOutlineData, drawingRect, drawingColor)
         : null;
 
     const shouldRenderReference =
@@ -2653,12 +2806,12 @@ export class CanvasManager {
     this.ctx.restore();
   }
 
-    render() {
-      if (!this.ctx) return;
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  render() {
+    if (!this.ctx) return;
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-      const baseImage = this.getBaseImage();
-      if (!baseImage) return;
+    const baseImage = this.getBaseImage();
+    if (!baseImage) return;
 
     if (this.viewMode !== 'normal') {
       const rendered =
