@@ -1,4 +1,4 @@
-import { createOutline, simplifyEdges, posterizeImage } from '../utils/edgeDetection.js';
+import { generateOutlineMask, simplifyEdges, posterizeImage } from '../utils/edgeDetection.js';
 
 export class CanvasManager {
   constructor(canvas) {
@@ -1647,13 +1647,7 @@ export class CanvasManager {
 
   getOutlineDataForImage(image, rect, threshold = 50) {
     if (!image || !rect.width || !rect.height) return null;
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = rect.width;
-    tempCanvas.height = rect.height;
-    const ctx = tempCanvas.getContext('2d');
-    ctx.drawImage(image, 0, 0, rect.width, rect.height);
-    const imageData = ctx.getImageData(0, 0, rect.width, rect.height);
-    return createOutline(imageData, threshold);
+    return generateOutlineMask(image, rect.width, rect.height, { threshold });
   }
 
   tintOutline(outlineData, color) {
