@@ -210,6 +210,96 @@ function maskToImageData(mask, width, height) {
   return new ImageData(data, width, height);
 }
 
+function extractMaskEdges(mask, width, height) {
+  const output = new Uint8Array(mask.length);
+  const idx = (x, y) => y * width + x;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const current = mask[idx(x, y)];
+      if (!current) continue;
+
+      let hasBackgroundNeighbor = false;
+      for (let ny = -1; ny <= 1 && !hasBackgroundNeighbor; ny += 1) {
+        for (let nx = -1; nx <= 1 && !hasBackgroundNeighbor; nx += 1) {
+          if (nx === 0 && ny === 0) continue;
+          const px = x + nx;
+          const py = y + ny;
+          if (px < 0 || py < 0 || px >= width || py >= height) {
+            hasBackgroundNeighbor = true;
+            break;
+          }
+          if (mask[idx(px, py)] === 0) {
+            hasBackgroundNeighbor = true;
+          }
+        }
+      }
+
+      if (hasBackgroundNeighbor) {
+        output[idx(x, y)] = 255;
+      }
+    }
+  }
+
+  return output;
+}
+
+function analyzeMask(mask, width, height) {
+  const visited = new Uint8Array(mask.length);
+  const neighbors = [1, -1, width, -width];
+  const totalPixels = width * height;
+  let componentCount = 0;
+  let largest = 0;
+  let totalPerimeter = 0;
+  let activePixels = 0;
+
+  for (let i = 0; i < mask.length; i += 1) {
+    if (mask[i] === 0) continue;
+    activePixels += 1;
+    if (visited[i]) continue;
+
+    componentCount += 1;
+    const stack = [i];
+    let area = 0;
+    let perimeter = 0;
+    visited[i] = 1;
+
+    while (stack.length) {
+      const idx = stack.pop();
+      const y = Math.floor(idx / width);
+      const x = idx - y * width;
+      area += 1;
+
+      for (let n = 0; n < neighbors.length; n += 1) {
+        const offset = neighbors[n];
+        const nx = x + (offset === 1 ? 1 : offset === -1 ? -1 : 0);
+        const ny = y + (offset === width ? 1 : offset === -width ? -1 : 0);
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) {
+          perimeter += 1;
+          continue;
+        }
+        const neighborIndex = idx + offset;
+        if (mask[neighborIndex] === 0) {
+          perimeter += 1;
+        } else if (!visited[neighborIndex]) {
+          visited[neighborIndex] = 1;
+          stack.push(neighborIndex);
+        }
+      }
+    }
+
+    if (area > largest) largest = area;
+    totalPerimeter += perimeter;
+  }
+
+  return {
+    components: componentCount,
+    maxAreaRatio: totalPixels ? largest / totalPixels : 0,
+    averagePerimeter: componentCount ? totalPerimeter / componentCount : 0,
+    activeRatio: totalPixels ? activePixels / totalPixels : 0,
+  };
+}
+
 function drawToCanvas(image, width, height) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -243,7 +333,8 @@ export function thresholdEdges(imageData, threshold = 128) {
 export function generateOutlineMask(image, targetWidth, targetHeight, options = {}) {
   if (!image || !targetWidth || !targetHeight) return null;
 
-  const opts = { ...DEFAULT_OUTLINE_OPTIONS, ...options };
+  const { debugCallback, ...rest } = options || {};
+  const opts = { ...DEFAULT_OUTLINE_OPTIONS, ...rest };
   const scale = Math.min(opts.maxSide / targetWidth, opts.maxSide / targetHeight, 1);
   const width = Math.max(1, Math.round(targetWidth * scale));
   const height = Math.max(1, Math.round(targetHeight * scale));
@@ -260,18 +351,40 @@ export function generateOutlineMask(image, targetWidth, targetHeight, options = 
     ...opts,
     minComponentPixels: scaledMinComponent,
   });
-  const maskImageData = maskToImageData(cleanedMask, width, height);
+
+  const outlineEdges = extractMaskEdges(cleanedMask, width, height);
+  let edgePixels = 0;
+  for (let i = 0; i < outlineEdges.length; i += 1) {
+    if (outlineEdges[i]) edgePixels += 1;
+  }
+  const maskStats = analyzeMask(cleanedMask, width, height);
+  const edgeMask = edgePixels > 0 ? outlineEdges : cleanedMask;
+  const maskImageData = maskToImageData(edgeMask, width, height);
+
+  if (typeof debugCallback === 'function') {
+    debugCallback({
+      options: opts,
+      maskImageData: maskToImageData(cleanedMask, width, height),
+      edgeImageData: maskImageData,
+      stats: maskStats,
+    });
+  }
 
   if (width === targetWidth && height === targetHeight) {
     return maskImageData;
   }
+
+  const maskCanvas = document.createElement('canvas');
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  maskCanvas.getContext('2d').putImageData(maskImageData, 0, 0);
 
   const upscaleCanvas = document.createElement('canvas');
   upscaleCanvas.width = targetWidth;
   upscaleCanvas.height = targetHeight;
   const upscaleCtx = upscaleCanvas.getContext('2d');
   upscaleCtx.imageSmoothingEnabled = false;
-  upscaleCtx.drawImage(canvas, 0, 0, width, height, 0, 0, targetWidth, targetHeight);
+  upscaleCtx.drawImage(maskCanvas, 0, 0, width, height, 0, 0, targetWidth, targetHeight);
   return upscaleCtx.getImageData(0, 0, targetWidth, targetHeight);
 }
 
@@ -389,14 +502,32 @@ function drawSimplifiedEdges(points, width, height) {
   return output;
 }
 
-export function simplifyEdges(imageData, threshold = 128, epsilon = 2.5) {
+function drawEdgePoints(points, width, height) {
+  const output = new ImageData(width, height);
+  for (let i = 0; i < points.length; i += 1) {
+    const { x, y } = points[i];
+    const idx = (y * width + x) * 4;
+    output.data[idx] = 255;
+    output.data[idx + 1] = 255;
+    output.data[idx + 2] = 255;
+    output.data[idx + 3] = 255;
+  }
+  return output;
+}
+
+export function simplifyEdges(imageData, threshold = 128, epsilon = 1.5) {
   const grayscale = toGrayscale(
     new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height)
   );
   const binary = thresholdEdges(grayscale, threshold);
 
   const edgePoints = extractEdgePoints(binary.data, imageData.width, imageData.height);
-  const simplifiedPoints = rdpSimplify(edgePoints, epsilon);
+  const safeEpsilon = Math.max(0.5, epsilon);
+  const simplifiedPoints = rdpSimplify(edgePoints, safeEpsilon);
+
+  if (simplifiedPoints.length < 3) {
+    return drawEdgePoints(edgePoints, imageData.width, imageData.height);
+  }
 
   return drawSimplifiedEdges(simplifiedPoints, imageData.width, imageData.height);
 }
