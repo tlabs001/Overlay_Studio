@@ -417,6 +417,36 @@ export class OverlayControls {
       });
     };
 
+    const syncUIFromState = () => {
+      const interactionMode = this.canvasManager?.interactionMode || 'none';
+      const traceEnabled = !!this.canvasManager?.traceModeEnabled;
+
+      if (measureBtn) {
+        const measureActive = interactionMode === 'measure';
+        measureBtn.textContent = measureActive ? 'Measure (On)' : 'Measure';
+        measureBtn.classList.toggle('active', measureActive);
+      }
+
+      if (brushBtn) {
+        brushBtn.classList.toggle(
+          'active',
+          interactionMode === 'brush' && this.brushTool?.mode === 'draw'
+        );
+      }
+
+      if (eraserBtn) {
+        eraserBtn.classList.toggle(
+          'active',
+          interactionMode === 'brush' && this.brushTool?.mode === 'erase'
+        );
+      }
+
+      if (traceBtn) {
+        traceBtn.textContent = traceEnabled ? 'Trace (On)' : 'Trace';
+        traceBtn.classList.toggle('active', traceEnabled);
+      }
+    };
+
     const updateOutlineAssistReadout = () => {
       if (!outlineAssistReadout) return;
       const enabled = !!this.canvasManager?.outlineAssistEnabled;
@@ -588,9 +618,15 @@ export class OverlayControls {
 
     if (measureBtn) {
       measureBtn.addEventListener('click', () => {
-        const nextState = !this.measurementTool.gestureDrawingEnabled;
-        this.measurementTool.setGestureDrawingEnabled(nextState);
-        measureBtn.textContent = nextState ? 'Measure (On)' : 'Measure';
+        const nextMode = this.canvasManager?.interactionMode === 'measure' ? 'none' : 'measure';
+        if (nextMode === 'measure') {
+          this.canvasManager?.setTraceEnabled(false);
+          this.canvasManager?.setInteractionMode('measure');
+          this.brushTool?.setActive(false);
+        } else {
+          this.canvasManager?.setInteractionMode('none');
+        }
+        syncUIFromState();
         this.closePanel();
       });
     }
@@ -634,20 +670,22 @@ export class OverlayControls {
 
     const setBrushMode = (mode) => {
       if (!this.brushTool) return;
-      if (this.brushTool.isEnabled && this.brushTool.mode === mode) {
+      const interactionMode = this.canvasManager?.interactionMode || 'none';
+      const isActiveMode = interactionMode === 'brush' && this.brushTool.isEnabled && this.brushTool.mode === mode;
+
+      if (isActiveMode) {
         this.brushTool.setActive(false);
-        if (brushBtn) brushBtn.classList.remove('active');
-        if (eraserBtn) eraserBtn.classList.remove('active');
+        this.canvasManager?.setTraceEnabled(false);
+        this.canvasManager?.setInteractionMode('none');
+        syncUIFromState();
         return;
       }
+
+      this.canvasManager?.setTraceEnabled(false);
+      this.canvasManager?.setInteractionMode('brush');
       this.brushTool.setActive(true);
       this.brushTool.setMode(mode);
-      if (brushBtn) {
-        brushBtn.classList.toggle('active', mode === 'draw');
-      }
-      if (eraserBtn) {
-        eraserBtn.classList.toggle('active', mode === 'erase');
-      }
+      syncUIFromState();
     };
 
     if (brushBtn) {
@@ -777,20 +815,14 @@ export class OverlayControls {
 
     if (traceBtn) {
       traceBtn.addEventListener('click', () => {
-        const enabled = this.canvasManager.traceModeEnabled
-          ? this.canvasManager.disableTraceMode()
-          : this.canvasManager.enableTraceMode();
+        const enabled = this.canvasManager.setTraceEnabled(!this.canvasManager.traceModeEnabled);
         if (enabled) {
           this.brushTool?.setActive(true);
           this.brushTool?.setMode('draw');
-          if (brushBtn) {
-            brushBtn.classList.add('active');
-          }
-          if (eraserBtn) {
-            eraserBtn.classList.remove('active');
-          }
+        } else {
+          this.brushTool?.setActive(false);
         }
-        traceBtn.textContent = enabled ? 'Trace (On)' : 'Trace';
+        syncUIFromState();
         this.closePanel();
       });
     }
@@ -983,6 +1015,8 @@ export class OverlayControls {
         this.closePanel();
       });
     }
+
+    syncUIFromState();
   }
 
   async handleFaceDetection() {
