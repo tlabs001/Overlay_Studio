@@ -70,6 +70,12 @@ export class CanvasManager {
     this.outlineAssistScoreListener = null;
     this.renderRaf = null;
 
+    this.interactionMode = 'none';
+    this.brushEnabled = false;
+    this.measureEnabled = false;
+    this.rulerEnabled = true;
+    this.traceLinkedBrush = false;
+
     this.measurementTool = null;
     this.resizeObserver = null;
     this.resizeRaf = null;
@@ -180,6 +186,10 @@ export class CanvasManager {
 
   setMeasurementTool(tool) {
     this.measurementTool = tool || null;
+    if (this.measurementTool) {
+      this.measurementTool.setGestureDrawingEnabled?.(this.measureEnabled);
+      this.measurementTool.setRulerEnabled?.(this.rulerEnabled);
+    }
   }
 
   setAnalysisSelectionListener(callback) {
@@ -261,21 +271,60 @@ export class CanvasManager {
 
   toggleTraceMode() {
     if (this.traceModeEnabled) {
-      return this.disableTraceMode();
+      return this.setTraceEnabled(false);
     }
-    return this.enableTraceMode();
+    return this.setTraceEnabled(true);
   }
 
   enableTraceMode() {
-    this.traceModeEnabled = true;
+    return this.setTraceEnabled(true);
+  }
+
+  disableTraceMode() {
+    return this.setTraceEnabled(false);
+  }
+
+  setInteractionMode(mode = 'none', options = {}) {
+    const nextMode = mode === 'brush' || mode === 'measure' ? mode : 'none';
+    const fromTrace = options.fromTrace || false;
+    this.interactionMode = nextMode;
+    this.brushEnabled = nextMode === 'brush';
+    this.measureEnabled = nextMode === 'measure';
+    if (!fromTrace) {
+      this.traceLinkedBrush = false;
+    } else if (nextMode === 'brush') {
+      this.traceLinkedBrush = true;
+    }
+
+    if (this.measurementTool) {
+      this.measurementTool.setGestureDrawingEnabled?.(this.measureEnabled);
+    }
+    this.render();
+    return this.interactionMode;
+  }
+
+  setTraceEnabled(enabled) {
+    const next = !!enabled;
+    this.traceModeEnabled = next;
+    if (next) {
+      this.setInteractionMode('brush', { fromTrace: true });
+    } else if (this.traceLinkedBrush && this.interactionMode === 'brush') {
+      this.setInteractionMode('none');
+      this.traceLinkedBrush = false;
+    } else {
+      this.traceLinkedBrush = false;
+    }
     this.render();
     return this.traceModeEnabled;
   }
 
-  disableTraceMode() {
-    this.traceModeEnabled = false;
+  setRulerEnabled(enabled) {
+    this.rulerEnabled = !!enabled;
+    if (this.measurementTool?.setRulerEnabled) {
+      this.measurementTool.setRulerEnabled(this.rulerEnabled);
+    }
     this.render();
-    return this.traceModeEnabled;
+    return this.rulerEnabled;
   }
 
   undoTraceStroke() {
@@ -353,7 +402,7 @@ export class CanvasManager {
   }
 
   handleOverlayPointerDown(event) {
-    if (this.measurementTool?.gestureDrawingEnabled) {
+    if (this.interactionMode === 'measure') {
       return;
     }
 
@@ -421,7 +470,7 @@ export class CanvasManager {
       }
     }
 
-    if (this.traceModeEnabled || this.assistModeEnabled) {
+    if ((this.traceModeEnabled && this.interactionMode === 'brush') || this.assistModeEnabled) {
       const point = this.getPointerPosition(event);
       if (this.traceModeEnabled) {
         this.activeTraceStroke = [point];
@@ -442,7 +491,7 @@ export class CanvasManager {
   }
 
   handleOverlayPointerMove(event) {
-    if (this.measurementTool?.gestureDrawingEnabled) {
+    if (this.interactionMode === 'measure') {
       return;
     }
 
@@ -510,7 +559,7 @@ export class CanvasManager {
   }
 
   handleOverlayPointerUp(event) {
-    if (this.measurementTool?.gestureDrawingEnabled) {
+    if (this.interactionMode === 'measure') {
       return;
     }
 
@@ -1539,6 +1588,8 @@ export class CanvasManager {
             drawing: { ...this.baseUnitAnchor.drawing },
           }
         : null,
+      interactionMode: this.interactionMode,
+      rulerEnabled: this.rulerEnabled,
     };
   }
 
@@ -1561,6 +1612,10 @@ export class CanvasManager {
     this.drawingTransform = state.drawingTransform
       ? { ...this.drawingTransform, ...state.drawingTransform }
       : { ...this.drawingTransform };
+    if (state.rulerEnabled !== undefined) {
+      this.setRulerEnabled(state.rulerEnabled);
+    }
+    this.setInteractionMode(state.interactionMode || 'none');
     this.clearDifferenceLayer();
     if (this.assistModeEnabled || this.assistMaskStrokes.length) {
       this.createMaskLayer();

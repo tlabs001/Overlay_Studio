@@ -24,6 +24,7 @@ export class MeasurementTool {
       lengthInUnits: 6,
     };
     this.rulerInteraction = null;
+    this.rulerEnabled = true;
 
     this.draggingPointIndex = null;
     this.dragStartTime = null;
@@ -344,6 +345,11 @@ export class MeasurementTool {
     this.gestureDrawingEnabled = enabled;
   }
 
+  setRulerEnabled(enabled) {
+    this.rulerEnabled = !!enabled;
+    this.render();
+  }
+
   drawBaseObjectOverlay() {
     if (!this.ctx) return;
     this.ctx.save();
@@ -574,7 +580,9 @@ export class MeasurementTool {
       this.ctx.restore();
     });
 
-    this.drawUnitRuler();
+    if (this.rulerEnabled) {
+      this.drawUnitRuler();
+    }
 
     this.drawBaseObjectOverlay();
 
@@ -661,6 +669,7 @@ export class MeasurementTool {
       baseObjectAnchor: this.baseObjectAnchor
         ? { reference: { ...this.baseObjectAnchor.reference }, drawing: { ...this.baseObjectAnchor.drawing } }
         : null,
+      rulerEnabled: this.rulerEnabled,
     };
   }
 
@@ -677,6 +686,7 @@ export class MeasurementTool {
     this.activeSnapshotIndex =
       typeof state.activeSnapshotIndex === 'number' ? state.activeSnapshotIndex : this.snapshots.length - 1;
     this.unitRuler = state.unitRuler ? { ...state.unitRuler } : this.unitRuler;
+    this.rulerEnabled = state.rulerEnabled ?? this.rulerEnabled;
     this.rulerInteraction = null;
     if (typeof this.baseObjectCallback === 'function') {
       this.baseObjectCallback(this.baseObjectAnchor);
