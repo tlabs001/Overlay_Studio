@@ -136,6 +136,22 @@
               <div id="outlineAssistReadout" class="outline-assist-readout" aria-live="polite">
                 Alignment: --
               </div>
+              <div class="outline-control-row">
+                <label class="outline-control-row__label" for="outlineRefinement">Outline refinement</label>
+                <div class="outline-control-row__inputs">
+                  <input
+                    type="range"
+                    id="outlineRefinement"
+                    min="0"
+                    max="100"
+                    value="0"
+                    step="1"
+                    aria-label="Outline refinement"
+                  />
+                  <span id="outlineRefinementValue" class="outline-control-row__value">0</span>
+                </div>
+                <p class="outline-control-row__hint">Higher removes small dots; may remove very fine detail</p>
+              </div>
             </div>
           </div>
           <div class="tool-subsection collapsed">

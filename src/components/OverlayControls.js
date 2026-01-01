@@ -36,6 +36,8 @@ export class OverlayControls {
       bothOutlineBtn: document.getElementById('bothOutlineTool'),
       outlineAssistBtn: document.getElementById('outlineAssistTool'),
       outlineAssistReadout: document.getElementById('outlineAssistReadout'),
+      outlineRefinementSlider: document.getElementById('outlineRefinement'),
+      outlineRefinementValue: document.getElementById('outlineRefinementValue'),
       baseUnitOutlineBtn: document.getElementById('baseUnitOutlineTool'),
       baseUnitDrawingToggleBtn: document.getElementById('baseUnitDrawingToggleTool'),
       normalViewBtn: document.getElementById('normalViewTool'),
@@ -369,6 +371,8 @@ export class OverlayControls {
       bothOutlineBtn,
       outlineAssistBtn,
       outlineAssistReadout,
+      outlineRefinementSlider,
+      outlineRefinementValue,
       baseUnitOutlineBtn,
       baseUnitDrawingToggleBtn,
       normalViewBtn,
@@ -472,6 +476,26 @@ export class OverlayControls {
     };
 
     attachAssistListener();
+
+    const applyOutlineRefinement = (value) => {
+      const numeric = Math.max(0, Math.min(100, Number(value) || 0));
+      if (outlineRefinementSlider) outlineRefinementSlider.value = String(numeric);
+      if (outlineRefinementValue) outlineRefinementValue.textContent = String(numeric);
+      localStorage.setItem('overlay.outlineRefinement', String(numeric));
+      this.canvasManager?.setOutlineRefinement?.(numeric);
+    };
+
+    const savedOutlineRefinement = parseInt(
+      localStorage.getItem('overlay.outlineRefinement') || '0',
+      10
+    );
+    applyOutlineRefinement(Number.isNaN(savedOutlineRefinement) ? 0 : savedOutlineRefinement);
+
+    if (outlineRefinementSlider) {
+      outlineRefinementSlider.addEventListener('input', (event) => {
+        applyOutlineRefinement(event.target.value);
+      });
+    }
 
     const savedPoseModelQuality = localStorage.getItem('overlay.poseModelQuality') || 'full';
     if (poseModelSelect) {

@@ -68,7 +68,10 @@ export class CanvasManager {
     this.outlineAssistLastScore = 0;
     this.outlineAssistLastComputedAt = 0;
     this.outlineAssistScoreListener = null;
+    this.outlineRefinement = 0;
     this.renderRaf = null;
+
+    this.outlineCache = new WeakMap();
 
     this.interactionMode = 'none';
     this.brushEnabled = false;
@@ -138,6 +141,7 @@ export class CanvasManager {
     this.referenceImage = reference || null;
     this.drawingImage = drawing || null;
     this.images = { reference: this.referenceImage, drawing: this.drawingImage };
+    this.invalidateOutlineCaches();
   }
 
   setReferenceImage(image) {
@@ -862,6 +866,11 @@ export class CanvasManager {
   resetCaches() {
     this.simplifiedLayer = null;
     this.posterizedLayer = null;
+    this.invalidateOutlineCaches();
+  }
+
+  invalidateOutlineCaches() {
+    this.outlineCache = new WeakMap();
   }
 
   requestRender() {
@@ -883,6 +892,14 @@ export class CanvasManager {
 
   setViewMode(mode = 'normal') {
     this.viewMode = mode;
+    this.render();
+  }
+
+  setOutlineRefinement(value = 0) {
+    const numeric = Math.max(0, Math.min(100, Number(value) || 0));
+    if (numeric === this.outlineRefinement) return;
+    this.outlineRefinement = numeric;
+    this.invalidateOutlineCaches();
     this.render();
   }
 
@@ -1703,6 +1720,13 @@ export class CanvasManager {
   getOutlineDataForImage(image, rect, threshold = 50) {
     if (!image || !rect.width || !rect.height) return null;
 
+    const refinement = this.outlineRefinement || 0;
+    const cacheKey = `${rect.width}x${rect.height}|thr:${threshold}|ref:${refinement}`;
+    const existingCache = this.outlineCache.get(image);
+    if (existingCache?.has(cacheKey)) {
+      return existingCache.get(cacheKey);
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = rect.width;
     canvas.height = rect.height;
@@ -1719,7 +1743,7 @@ export class CanvasManager {
     }
 
     const imageData = ctx.getImageData(0, 0, rect.width, rect.height);
-    const outline = createOutline(imageData, threshold);
+    const outline = createOutline(imageData, threshold, { refinement });
 
     if (outline) {
       const { data, width, height } = outline;
@@ -1730,6 +1754,12 @@ export class CanvasManager {
       const coverage = edgePixels / Math.max(1, width * height);
       // eslint-disable-next-line no-console
       console.debug('[outline]', { threshold, coverage: `${(coverage * 100).toFixed(2)}%` });
+      let cacheMap = existingCache;
+      if (!cacheMap) {
+        cacheMap = new Map();
+        this.outlineCache.set(image, cacheMap);
+      }
+      cacheMap.set(cacheKey, outline);
     }
 
     return outline;
