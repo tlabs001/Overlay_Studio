@@ -32,6 +32,138 @@ function grayscaleToFloatArray(imageData) {
   return gray;
 }
 
+function applySobelEdges(imageData, blurRadius = 1) {
+  const { width, height } = imageData;
+  const gray = grayscaleToFloatArray(imageData);
+  const blurred = boxBlurGrayChannel(gray, width, height, Math.max(0, Math.round(blurRadius)));
+  const { magnitude, maxMagnitude } = computeSobelMagnitude(blurred, width, height);
+  const data = new Uint8ClampedArray(width * height * 4);
+  const scale = maxMagnitude ? 255 / maxMagnitude : 1;
+
+  for (let i = 0; i < magnitude.length; i += 1) {
+    const value = Math.min(255, magnitude[i] * scale);
+    const idx = i * 4;
+    data[idx] = value;
+    data[idx + 1] = value;
+    data[idx + 2] = value;
+    data[idx + 3] = 255;
+  }
+
+  return new ImageData(data, width, height);
+}
+
+function computeCoverage(imageData) {
+  const { data, width, height } = imageData;
+  let edgePixels = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] > 0) edgePixels += 1;
+  }
+  const totalPixels = width * height || 1;
+  return edgePixels / totalPixels;
+}
+
+function pruneIsolatedPixels(mask, width, height, minNeighbors = 2) {
+  if (!minNeighbors) return mask;
+  const output = mask.slice();
+  const neighbors = [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ];
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = y * width + x;
+      if (!mask[idx]) continue;
+
+      let neighborCount = 0;
+      for (let n = 0; n < neighbors.length; n += 1) {
+        const [dx, dy] = neighbors[n];
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighborIndex = ny * width + nx;
+        if (mask[neighborIndex]) neighborCount += 1;
+      }
+
+      if (neighborCount < minNeighbors) {
+        output[idx] = 0;
+      }
+    }
+  }
+
+  return output;
+}
+
+function removeSmallComponents8(mask, width, height, minSize) {
+  if (!minSize) return mask;
+  const visited = new Uint8Array(mask.length);
+  const output = mask.slice();
+  const neighbors = [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ];
+
+  for (let i = 0; i < mask.length; i += 1) {
+    if (visited[i] || output[i] === 0) continue;
+
+    const stack = [i];
+    const component = [];
+    visited[i] = 1;
+
+    while (stack.length) {
+      const idx = stack.pop();
+      component.push(idx);
+      const y = Math.floor(idx / width);
+      const x = idx - y * width;
+
+      for (let n = 0; n < neighbors.length; n += 1) {
+        const [dx, dy] = neighbors[n];
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighborIndex = (y + dy) * width + (x + dx);
+        if (!visited[neighborIndex] && output[neighborIndex] === 255) {
+          visited[neighborIndex] = 1;
+          stack.push(neighborIndex);
+        }
+      }
+    }
+
+    if (component.length < minSize) {
+      for (let c = 0; c < component.length; c += 1) {
+        output[component[c]] = 0;
+      }
+    }
+  }
+
+  return output;
+}
+
+function maskToBinary(mask, width, height) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < mask.length; i += 1) {
+    const value = mask[i];
+    const idx = i * 4;
+    data[idx] = value;
+    data[idx + 1] = value;
+    data[idx + 2] = value;
+    data[idx + 3] = value ? 255 : 0;
+  }
+  return new ImageData(data, width, height);
+}
+
 function boxBlurGrayChannel(input, width, height, radius = 1) {
   if (radius <= 0) return input;
 
@@ -330,6 +462,72 @@ export function thresholdEdges(imageData, threshold = 128) {
   return new ImageData(binary, width, height);
 }
 
+export function createFeatureOutline(imageData, options = {}) {
+  if (!imageData) return null;
+
+  const {
+    threshold = 55,
+    blurRadius = 1,
+    minNeighbors = 2,
+    minComponentPixels = 35,
+    debugCallback,
+  } = options;
+
+  const width = imageData.width;
+  const height = imageData.height;
+  if (!width || !height) return null;
+
+  const grayscale = toGrayscale(imageData);
+  const sobel = applySobelEdges(grayscale, blurRadius);
+
+  const normalizedThreshold = typeof threshold === 'number' && threshold > 0 && threshold <= 1;
+  let threshold255 = normalizedThreshold ? threshold * 255 : threshold;
+  let binary = thresholdEdges(sobel, threshold255);
+  let coverage = computeCoverage(binary);
+
+  if (coverage > 0.35) {
+    if (normalizedThreshold && threshold255 === threshold) {
+      threshold255 = threshold * 255;
+      binary = thresholdEdges(sobel, threshold255);
+      coverage = computeCoverage(binary);
+    }
+
+    const maxThreshold = 200;
+    while (coverage > 0.25 && threshold255 < maxThreshold) {
+      threshold255 = Math.min(maxThreshold, threshold255 + 10);
+      binary = thresholdEdges(sobel, threshold255);
+      coverage = computeCoverage(binary);
+    }
+  }
+
+  const mask = new Uint8Array(width * height);
+  for (let i = 0; i < mask.length; i += 1) {
+    mask[i] = binary.data[i * 4] ? 255 : 0;
+  }
+
+  const pruned = pruneIsolatedPixels(mask, width, height, Math.max(0, Math.round(minNeighbors)));
+  const cleaned = removeSmallComponents8(
+    pruned,
+    width,
+    height,
+    Math.max(0, Math.round(minComponentPixels))
+  );
+
+  const outline = maskToBinary(cleaned, width, height);
+
+  if (typeof debugCallback === 'function') {
+    const stats = analyzeMask(cleaned, width, height);
+    debugCallback({
+      options: { threshold: threshold255, blurRadius, minNeighbors, minComponentPixels },
+      maskImageData: maskToBinary(mask, width, height),
+      edgeImageData: outline,
+      stats,
+    });
+  }
+
+  return outline;
+}
+
 export function generateOutlineMask(image, targetWidth, targetHeight, options = {}) {
   if (!image || !targetWidth || !targetHeight) return null;
 
@@ -353,13 +551,8 @@ export function generateOutlineMask(image, targetWidth, targetHeight, options = 
   });
 
   const outlineEdges = extractMaskEdges(cleanedMask, width, height);
-  let edgePixels = 0;
-  for (let i = 0; i < outlineEdges.length; i += 1) {
-    if (outlineEdges[i]) edgePixels += 1;
-  }
   const maskStats = analyzeMask(cleanedMask, width, height);
-  const edgeMask = edgePixels > 0 ? outlineEdges : cleanedMask;
-  const maskImageData = maskToImageData(edgeMask, width, height);
+  const maskImageData = maskToImageData(outlineEdges, width, height);
 
   if (typeof debugCallback === 'function') {
     debugCallback({
@@ -389,7 +582,7 @@ export function generateOutlineMask(image, targetWidth, targetHeight, options = 
 }
 
 export function createOutline(imageData, threshold = 50) {
-  return generateOutlineMask(imageData, imageData.width, imageData.height, { threshold });
+  return createFeatureOutline(imageData, { threshold });
 }
 
 export function posterizeImage(imageData, levels = 4) {
