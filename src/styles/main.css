@@ -279,6 +279,48 @@ body.light .tools-panel {
   font-weight: 700;
 }
 
+.outline-control-row {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.outline-control-row__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.outline-control-row__inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.outline-control-row__inputs input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.outline-control-row__value {
+  min-width: 32px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(229, 231, 235, 0.8);
+  font-size: 12px;
+  text-align: center;
+}
+
+.outline-control-row__hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: rgba(229, 231, 235, 0.7);
+}
+
 .panel-section {
   margin-bottom: 18px;
   padding: 12px 10px 14px;

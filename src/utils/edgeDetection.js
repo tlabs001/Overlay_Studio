@@ -10,6 +10,44 @@ const SOBEL_KERNEL_Y = [
   1, 2, 1,
 ];
 
+function clampRefinement(value = 0) {
+  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+function applyBoxBlur(imageData, radius = 1) {
+  const r = Math.max(0, Math.floor(radius));
+  if (r === 0) return imageData;
+
+  const { width, height, data } = imageData;
+  const output = new Uint8ClampedArray(data.length);
+  const channels = 4;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      let sum = 0;
+      let count = 0;
+      for (let ky = -r; ky <= r; ky += 1) {
+        for (let kx = -r; kx <= r; kx += 1) {
+          const nx = x + kx;
+          const ny = y + ky;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const idx = (ny * width + nx) * channels;
+          sum += data[idx];
+          count += 1;
+        }
+      }
+      const avg = sum / Math.max(1, count);
+      const outIndex = (y * width + x) * channels;
+      output[outIndex] = avg;
+      output[outIndex + 1] = avg;
+      output[outIndex + 2] = avg;
+      output[outIndex + 3] = 255;
+    }
+  }
+
+  return new ImageData(output, width, height);
+}
+
 export function toGrayscale(imageData) {
   const { width, height, data } = imageData;
   const gray = new Uint8ClampedArray(data.length);
@@ -74,10 +112,167 @@ export function thresholdEdges(imageData, threshold = 50) {
   return new ImageData(binary, width, height);
 }
 
-export function createOutline(imageData, threshold = 50) {
+function imageDataToMask(imageData) {
+  const { data } = imageData;
+  const mask = new Uint8Array((data.length / 4) | 0);
+  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+    mask[p] = data[i + 3] > 0 ? 1 : 0;
+  }
+  return mask;
+}
+
+function maskToImageData(mask, width, height) {
+  const output = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < mask.length; i += 1) {
+    const value = mask[i] ? 255 : 0;
+    const outIndex = i * 4;
+    output[outIndex] = value;
+    output[outIndex + 1] = value;
+    output[outIndex + 2] = value;
+    output[outIndex + 3] = value;
+  }
+  return new ImageData(output, width, height);
+}
+
+function pruneIsolatedPixels(mask, width, height, minNeighbors = 0) {
+  if (minNeighbors <= 0) return Uint8Array.from(mask);
+
+  const pruned = new Uint8Array(mask.length);
+  const neighborOffsets = [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ];
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = y * width + x;
+      if (!mask[idx]) continue;
+      let neighbors = 0;
+      for (let i = 0; i < neighborOffsets.length; i += 1) {
+        const [ox, oy] = neighborOffsets[i];
+        const nx = x + ox;
+        const ny = y + oy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const nIdx = ny * width + nx;
+        if (mask[nIdx]) neighbors += 1;
+      }
+      if (neighbors >= minNeighbors) {
+        pruned[idx] = 1;
+      }
+    }
+  }
+
+  return pruned;
+}
+
+function removeSmallComponents(mask, width, height, minSize = 0) {
+  if (minSize <= 0) return Uint8Array.from(mask);
+
+  const visited = new Uint8Array(mask.length);
+  const kept = new Uint8Array(mask.length);
+  const neighborOffsets = [
+    [-1, -1],
+    [0, -1],
+    [1, -1],
+    [-1, 0],
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ];
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const startIdx = y * width + x;
+      if (!mask[startIdx] || visited[startIdx]) continue;
+
+      const stack = [startIdx];
+      const component = [];
+      visited[startIdx] = 1;
+
+      while (stack.length) {
+        const current = stack.pop();
+        component.push(current);
+        const cx = current % width;
+        const cy = Math.floor(current / width);
+
+        for (let i = 0; i < neighborOffsets.length; i += 1) {
+          const [ox, oy] = neighborOffsets[i];
+          const nx = cx + ox;
+          const ny = cy + oy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const nIdx = ny * width + nx;
+          if (visited[nIdx] || !mask[nIdx]) continue;
+          visited[nIdx] = 1;
+          stack.push(nIdx);
+        }
+      }
+
+      if (component.length >= minSize) {
+        for (let i = 0; i < component.length; i += 1) {
+          kept[component[i]] = 1;
+        }
+      }
+    }
+  }
+
+  return kept;
+}
+
+function computeCoverage(mask, width, height) {
+  let edges = 0;
+  for (let i = 0; i < mask.length; i += 1) {
+    edges += mask[i] ? 1 : 0;
+  }
+  return edges / Math.max(1, width * height);
+}
+
+function cleanupOutlineMask(mask, width, height, refinement = 0) {
+  const minNeighbors = refinement === 0 ? 0 : 1 + Math.floor((refinement / 100) * 2);
+  const minComponentPixels = refinement === 0 ? 0 : Math.round(5 + (refinement / 100) * 80);
+
+  const applyCleanup = (neighbors, componentThreshold) => {
+    const pruned = pruneIsolatedPixels(mask, width, height, neighbors);
+    return removeSmallComponents(pruned, width, height, componentThreshold);
+  };
+
+  const baseCoverage = computeCoverage(mask, width, height);
+  const cleaned = applyCleanup(minNeighbors, minComponentPixels);
+  const cleanedCoverage = computeCoverage(cleaned, width, height);
+
+  if (
+    baseCoverage > 0 &&
+    cleanedCoverage < baseCoverage * 0.3 &&
+    refinement < 80
+  ) {
+    const relaxedNeighbors = Math.max(0, minNeighbors - 1);
+    const relaxedComponent = Math.max(0, Math.floor(minComponentPixels / 2));
+    return applyCleanup(relaxedNeighbors, relaxedComponent);
+  }
+
+  return cleaned;
+}
+
+export function createOutline(imageData, threshold = 50, opts = {}) {
+  const refinement = clampRefinement(opts?.refinement ?? 0);
   const grayscale = toGrayscale(imageData);
-  const sobel = applySobelEdges(grayscale);
-  return thresholdEdges(sobel, threshold);
+  const prefiltered = refinement >= 60 ? applyBoxBlur(grayscale, 1) : grayscale;
+  const sobel = applySobelEdges(prefiltered);
+  const binary = thresholdEdges(sobel, threshold);
+
+  if (refinement === 0) {
+    return binary;
+  }
+
+  const mask = imageDataToMask(binary);
+  const cleanedMask = cleanupOutlineMask(mask, binary.width, binary.height, refinement);
+  return maskToImageData(cleanedMask, binary.width, binary.height);
 }
 
 export function posterizeImage(imageData, levels = 4) {
