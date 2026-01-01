@@ -1,8 +1,4 @@
-import {
-  createFeatureOutline,
-  simplifyEdges,
-  posterizeImage,
-} from '../utils/edgeDetection.js';
+import { createOutline, simplifyEdges, posterizeImage } from '../utils/edgeDetection.js';
 
 export class CanvasManager {
   constructor(canvas) {
@@ -72,10 +68,6 @@ export class CanvasManager {
     this.outlineAssistLastScore = 0;
     this.outlineAssistLastComputedAt = 0;
     this.outlineAssistScoreListener = null;
-    this.outlineDebugEnabled = false;
-    this.outlineDebugOverlay = null;
-    this.outlineSpeckleMinPixels = 35;
-    this.outlineSpeckleMinNeighbors = 2;
     this.renderRaf = null;
 
     this.interactionMode = 'none';
@@ -121,8 +113,6 @@ export class CanvasManager {
     this.canvas.addEventListener('pointerup', this.handleOverlayPointerUp, true);
     this.canvas.addEventListener('pointercancel', this.handleOverlayPointerUp, true);
     this.canvas.addEventListener('wheel', this.handleWheel, { passive: false });
-
-    this.syncOutlineDebugFlag();
   }
 
   resize() {
@@ -142,16 +132,6 @@ export class CanvasManager {
       this.drawPerspectiveGrid();
     }
     this.render();
-  }
-
-  syncOutlineDebugFlag() {
-    if (typeof localStorage === 'undefined') return;
-    const enabled = localStorage.getItem('overlay.debugOutline') === 'true';
-    if (enabled === this.outlineDebugEnabled) return;
-    this.outlineDebugEnabled = enabled;
-    if (!enabled) {
-      this.teardownOutlineDebugOverlay();
-    }
   }
 
   setImages({ reference = this.images.reference, drawing = this.images.drawing } = {}) {
@@ -1723,9 +1703,6 @@ export class CanvasManager {
   getOutlineDataForImage(image, rect, threshold = 50) {
     if (!image || !rect.width || !rect.height) return null;
 
-    this.syncOutlineDebugFlag();
-    let debugPayload = null;
-
     const canvas = document.createElement('canvas');
     canvas.width = rect.width;
     canvas.height = rect.height;
@@ -1742,21 +1719,17 @@ export class CanvasManager {
     }
 
     const imageData = ctx.getImageData(0, 0, rect.width, rect.height);
+    const outline = createOutline(imageData, threshold);
 
-    const outline = createFeatureOutline(imageData, {
-      threshold,
-      blurRadius: 1,
-      minNeighbors: this.outlineSpeckleMinNeighbors,
-      minComponentPixels: this.outlineSpeckleMinPixels,
-      debugCallback: this.outlineDebugEnabled
-        ? (payload) => {
-            debugPayload = payload;
-          }
-        : undefined,
-    });
-
-    if (this.outlineDebugEnabled && debugPayload) {
-      this.updateOutlineDebugOverlay(debugPayload, rect);
+    if (outline) {
+      const { data, width, height } = outline;
+      let edgePixels = 0;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] > 0) edgePixels += 1;
+      }
+      const coverage = edgePixels / Math.max(1, width * height);
+      // eslint-disable-next-line no-console
+      console.debug('[outline]', { threshold, coverage: `${(coverage * 100).toFixed(2)}%` });
     }
 
     return outline;
@@ -1815,104 +1788,6 @@ export class CanvasManager {
     if (!ctx || !outlineData || !rect) return;
     const mask = this.createMaskFromOutline(outlineData);
     ctx.putImageData(mask, rect.x, rect.y);
-  }
-
-  ensureOutlineDebugOverlay() {
-    if (this.outlineDebugOverlay) return this.outlineDebugOverlay;
-    const container = document.createElement('div');
-    container.id = 'outlineDebugOverlay';
-    Object.assign(container.style, {
-      position: 'fixed',
-      bottom: '12px',
-      right: '12px',
-      display: 'grid',
-      gap: '8px',
-      padding: '8px',
-      background: 'rgba(0,0,0,0.65)',
-      color: '#fff',
-      fontSize: '11px',
-      borderRadius: '6px',
-      pointerEvents: 'none',
-      zIndex: 9999,
-      maxWidth: '300px',
-    });
-    document.body.appendChild(container);
-    this.outlineDebugOverlay = container;
-    return container;
-  }
-
-  teardownOutlineDebugOverlay() {
-    if (this.outlineDebugOverlay?.parentNode) {
-      this.outlineDebugOverlay.parentNode.removeChild(this.outlineDebugOverlay);
-    }
-    this.outlineDebugOverlay = null;
-  }
-
-  updateOutlineDebugOverlay(debugPayload, rect) {
-    if (!this.outlineDebugEnabled || !debugPayload) return;
-    const container = this.ensureOutlineDebugOverlay();
-    container.innerHTML = '';
-
-    const entries = [
-      { label: 'Mask', data: debugPayload.maskImageData },
-      { label: 'Edges', data: debugPayload.edgeImageData },
-    ];
-
-    entries.forEach((entry) => {
-      if (!entry.data) return;
-      const wrapper = document.createElement('div');
-      wrapper.style.display = 'flex';
-      wrapper.style.flexDirection = 'column';
-      wrapper.style.gap = '4px';
-
-      const label = document.createElement('div');
-      label.textContent = entry.label;
-      label.style.opacity = '0.8';
-      wrapper.appendChild(label);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = entry.data.width;
-      canvas.height = entry.data.height;
-      canvas.getContext('2d').putImageData(entry.data, 0, 0);
-      const scale = Math.min(140 / canvas.width, 140 / canvas.height, 1);
-      canvas.style.width = `${Math.round(canvas.width * scale)}px`;
-      canvas.style.height = `${Math.round(canvas.height * scale)}px`;
-      canvas.style.border = '1px solid rgba(255,255,255,0.2)';
-      wrapper.appendChild(canvas);
-
-      container.appendChild(wrapper);
-    });
-
-    const { stats, options } = debugPayload;
-    if (stats || options) {
-      const meta = document.createElement('div');
-      meta.style.opacity = '0.85';
-      const pieces = [];
-      if (options?.threshold !== undefined) pieces.push(`thr=${options.threshold}`);
-      if (options?.blurRadius !== undefined) pieces.push(`blur=${options.blurRadius}`);
-      if (stats?.components !== undefined) pieces.push(`components=${stats.components}`);
-      if (stats?.averagePerimeter !== undefined)
-        pieces.push(`avgLen=${stats.averagePerimeter.toFixed(1)}`);
-      if (stats?.maxAreaRatio !== undefined)
-        pieces.push(`maxArea=${Math.round(stats.maxAreaRatio * 100)}%`);
-      if (stats?.activeRatio !== undefined)
-        pieces.push(`coverage=${Math.round(stats.activeRatio * 100)}%`);
-      if (rect) pieces.push(`rect=${rect.width}x${rect.height}`);
-      meta.textContent = pieces.join(' | ');
-      container.appendChild(meta);
-    }
-
-    if (stats) {
-      // eslint-disable-next-line no-console
-      console.debug('[outline debug]', {
-        threshold: options?.threshold,
-        blurRadius: options?.blurRadius,
-        components: stats.components,
-        averagePerimeter: stats.averagePerimeter,
-        maxAreaRatio: stats.maxAreaRatio,
-        activeRatio: stats.activeRatio,
-      });
-    }
   }
 
   updateOutlineAssistState(score = 0, aligned = false) {
