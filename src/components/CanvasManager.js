@@ -1,4 +1,8 @@
-import { generateOutlineMask, simplifyEdges, posterizeImage } from '../utils/edgeDetection.js';
+import {
+  createFeatureOutline,
+  simplifyEdges,
+  posterizeImage,
+} from '../utils/edgeDetection.js';
 
 export class CanvasManager {
   constructor(canvas) {
@@ -70,6 +74,8 @@ export class CanvasManager {
     this.outlineAssistScoreListener = null;
     this.outlineDebugEnabled = false;
     this.outlineDebugOverlay = null;
+    this.outlineSpeckleMinPixels = 35;
+    this.outlineSpeckleMinNeighbors = 2;
     this.renderRaf = null;
 
     this.interactionMode = 'none';
@@ -1719,8 +1725,29 @@ export class CanvasManager {
 
     this.syncOutlineDebugFlag();
     let debugPayload = null;
-    const outline = generateOutlineMask(image, rect.width, rect.height, {
+
+    const canvas = document.createElement('canvas');
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    const ctx = canvas.getContext('2d');
+
+    if (image instanceof ImageData || image?.data instanceof Uint8ClampedArray) {
+      const sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = image.width;
+      sourceCanvas.height = image.height;
+      sourceCanvas.getContext('2d').putImageData(image, 0, 0);
+      ctx.drawImage(sourceCanvas, 0, 0, rect.width, rect.height);
+    } else {
+      ctx.drawImage(image, 0, 0, rect.width, rect.height);
+    }
+
+    const imageData = ctx.getImageData(0, 0, rect.width, rect.height);
+
+    const outline = createFeatureOutline(imageData, {
       threshold,
+      blurRadius: 1,
+      minNeighbors: this.outlineSpeckleMinNeighbors,
+      minComponentPixels: this.outlineSpeckleMinPixels,
       debugCallback: this.outlineDebugEnabled
         ? (payload) => {
             debugPayload = payload;
