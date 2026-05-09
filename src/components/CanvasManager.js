@@ -449,22 +449,22 @@ export class CanvasManager {
       const point = this.getPointerPosition(event);
       const drawingRect = this.getDrawingRect();
       const handleSize = 18;
-      const nearCorner = this.isNearResizeHandle(point, drawingRect, handleSize);
-      if (nearCorner) {
-        const center = {
-          x: drawingRect.x + drawingRect.width / 2,
-          y: drawingRect.y + drawingRect.height / 2,
-        };
-        const startDistance = Math.max(
-          6,
-          Math.hypot(point.x - center.x, point.y - center.y)
-        );
+      const resizeHandle = this.getResizeHandleAtPoint(point, drawingRect, handleSize);
+      if (resizeHandle) {
+        const oppositeCorner = this.getOppositeResizeHandle(resizeHandle);
+        const anchor = this.getResizeHandlePoint(oppositeCorner, drawingRect);
+        const draggedCorner = this.getResizeHandlePoint(resizeHandle, drawingRect);
         this.drawingResizeState = {
           pointerId: event.pointerId,
           start: point,
           startTransform: { ...this.drawingTransform },
-          center,
-          startDistance,
+          handle: resizeHandle,
+          anchor,
+          startVector: {
+            x: draggedCorner.x - anchor.x,
+            y: draggedCorner.y - anchor.y,
+          },
+          startRect: drawingRect,
         };
         this.canvas.setPointerCapture(event.pointerId);
         event.preventDefault();
@@ -532,20 +532,32 @@ export class CanvasManager {
       const baseRect = this.getDrawRect(this.drawingImage);
       const baseCenterX = baseRect.x + baseRect.width / 2;
       const baseCenterY = baseRect.y + baseRect.height / 2;
-      const center = this.drawingResizeState.center;
-      const distance = Math.max(
-        4,
-        Math.hypot(point.x - center.x, point.y - center.y)
-      );
-      const factor = distance / this.drawingResizeState.startDistance;
+      const { anchor, startVector, startRect } = this.drawingResizeState;
+      const currentVector = {
+        x: point.x - anchor.x,
+        y: point.y - anchor.y,
+      };
+      const ratioX = Math.abs(startVector.x) > 0.001 ? currentVector.x / startVector.x : Number.POSITIVE_INFINITY;
+      const ratioY = Math.abs(startVector.y) > 0.001 ? currentVector.y / startVector.y : Number.POSITIVE_INFINITY;
+      const factor = Math.max(0.05, Math.min(ratioX, ratioY));
       const nextScale = Math.min(
         Math.max(this.drawingResizeState.startTransform.scale * factor, 0.1),
         8
       );
+      const nextFactor = nextScale / this.drawingResizeState.startTransform.scale;
+      const nextWidth = startRect.width * nextFactor;
+      const nextHeight = startRect.height * nextFactor;
+      const fixedCorner = this.getOppositeResizeHandle(this.drawingResizeState.handle);
+      const fixedOnLeft = fixedCorner.includes('left');
+      const fixedOnTop = fixedCorner.includes('top');
+      const nextX = fixedOnLeft ? anchor.x : anchor.x - nextWidth;
+      const nextY = fixedOnTop ? anchor.y : anchor.y - nextHeight;
+      const nextCenterX = nextX + nextWidth / 2;
+      const nextCenterY = nextY + nextHeight / 2;
       this.drawingTransform = {
         scale: nextScale,
-        offsetX: center.x - baseCenterX,
-        offsetY: center.y - baseCenterY,
+        offsetX: nextCenterX - baseCenterX,
+        offsetY: nextCenterY - baseCenterY,
       };
       event.preventDefault();
       event.stopPropagation();
@@ -1294,15 +1306,44 @@ export class CanvasManager {
     };
   }
 
-  isNearResizeHandle(point, rect, size = 16) {
+  getResizeHandleAtPoint(point, rect, size = 16) {
     if (!rect || !rect.width || !rect.height) return false;
     const corners = [
-      { x: rect.x, y: rect.y },
-      { x: rect.x + rect.width, y: rect.y },
-      { x: rect.x, y: rect.y + rect.height },
-      { x: rect.x + rect.width, y: rect.y + rect.height },
+      { handle: 'top-left', x: rect.x, y: rect.y },
+      { handle: 'top-right', x: rect.x + rect.width, y: rect.y },
+      { handle: 'bottom-left', x: rect.x, y: rect.y + rect.height },
+      { handle: 'bottom-right', x: rect.x + rect.width, y: rect.y + rect.height },
     ];
-    return corners.some((corner) => Math.abs(point.x - corner.x) <= size && Math.abs(point.y - corner.y) <= size);
+    const hit = corners.find((corner) => Math.abs(point.x - corner.x) <= size && Math.abs(point.y - corner.y) <= size);
+    return hit ? hit.handle : null;
+  }
+
+  isNearResizeHandle(point, rect, size = 16) {
+    return !!this.getResizeHandleAtPoint(point, rect, size);
+  }
+
+  getOppositeResizeHandle(handle) {
+    const oppositeMap = {
+      'top-left': 'bottom-right',
+      'top-right': 'bottom-left',
+      'bottom-left': 'top-right',
+      'bottom-right': 'top-left',
+    };
+    return oppositeMap[handle] || 'top-left';
+  }
+
+  getResizeHandlePoint(handle, rect) {
+    switch (handle) {
+      case 'top-left':
+        return { x: rect.x, y: rect.y };
+      case 'top-right':
+        return { x: rect.x + rect.width, y: rect.y };
+      case 'bottom-left':
+        return { x: rect.x, y: rect.y + rect.height };
+      case 'bottom-right':
+      default:
+        return { x: rect.x + rect.width, y: rect.y + rect.height };
+    }
   }
 
   autoAlignDrawing(options = {}) {
