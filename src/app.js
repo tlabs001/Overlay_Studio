@@ -601,9 +601,7 @@ const initializeApp = () => {
 
   if (resetDifferenceBtn) {
     resetDifferenceBtn.addEventListener('click', () => {
-      canvasManager.clearDifferenceLayer();
-      canvasManager.clearAnalysisSelection();
-      canvasManager.resetToNormalRender();
+      canvasManager.clearAnalysisState();
       updateDifferenceSummary(null);
       updateOverlayPreview();
     });
