@@ -544,20 +544,26 @@ const initializeApp = () => {
     });
   }
   if (referenceClearBtn) {
-    referenceClearBtn.addEventListener('click', () => {
+    referenceClearBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       canvasManager.setReferenceImage(null);
       setThumbImage(referenceThumb, referenceThumbImage, null);
       updatePreviewWindows();
       updateCanvasPlaceholder();
+      canvasManager.render();
       updateOverlayPreview();
     });
   }
   if (drawingClearBtn) {
-    drawingClearBtn.addEventListener('click', () => {
+    drawingClearBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       canvasManager.setDrawingImage(null);
       setThumbImage(drawingThumb, drawingThumbImage, null);
       updatePreviewWindows();
       updateCanvasPlaceholder();
+      canvasManager.render();
       updateOverlayPreview();
     });
   }
