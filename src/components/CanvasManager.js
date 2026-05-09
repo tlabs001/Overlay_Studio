@@ -3001,7 +3001,7 @@ export class CanvasManager {
       : null;
 
     if (!layer) return;
-    const drawingLayer = this.drawingImage
+    const drawingLayer = this.referenceImage && this.drawingImage
       ? this.createLayerFromImage(this.drawingImage, drawingRect)
       : null;
 

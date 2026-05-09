@@ -583,6 +583,11 @@ body.light .tools-panel {
   aspect-ratio: 16 / 9;
 }
 
+
+.preview-window::before {
+  content: none !important;
+}
+
 .analysis-settings {
   display: flex;
   gap: 8px;
