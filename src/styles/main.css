@@ -583,6 +583,11 @@ body.light .tools-panel {
   aspect-ratio: 16 / 9;
 }
 
+.preview-window::before,
+.preview-window::after {
+  content: none !important;
+}
+
 .analysis-settings {
   display: flex;
   gap: 8px;
@@ -805,7 +810,3 @@ body.light .tools-panel {
   }
 }
 
-
-#drawingPreview::before {
-  content: none;
-}
