@@ -23,6 +23,8 @@ export class CanvasManager {
     this.poseDensitySubdivisions = 0;
     this.showPoseSegmentation = false;
     this.overlayColor = 'rgba(64, 86, 148, 0.65)';
+    this.referenceOpacity = 1;
+    this.outlineOpacity = 0.5;
     this.sightSizeGridVisible = false;
     this.sightSizeBaseUnit = null;
     this.perspectiveMode = null;
@@ -186,6 +188,20 @@ export class CanvasManager {
 
   setCloudAiEnabled(enabled) {
     this.cloudAiEnabled = !!enabled;
+  }
+
+  setReferenceOpacity(opacityPercent = 100) {
+    const value = Number(opacityPercent);
+    if (!Number.isFinite(value)) return;
+    this.referenceOpacity = Math.min(1, Math.max(0, value / 100));
+    this.render();
+  }
+
+  setOutlineOpacity(opacityPercent = 50) {
+    const value = Number(opacityPercent);
+    if (!Number.isFinite(value)) return;
+    this.outlineOpacity = Math.min(1, Math.max(0, value / 100));
+    this.render();
   }
 
   setMeasurementTool(tool) {
@@ -2964,14 +2980,14 @@ export class CanvasManager {
       );
     } else {
       this.ctx.save();
-      this.ctx.globalAlpha = baseAlpha;
+      this.ctx.globalAlpha = baseAlpha * this.referenceOpacity;
       this.ctx.drawImage(layer, simplifiedRect.x, simplifiedRect.y, simplifiedRect.width, simplifiedRect.height);
       this.ctx.restore();
     }
 
     if (drawingLayer) {
       this.ctx.save();
-      this.ctx.globalAlpha = 0.5 * baseAlpha;
+      this.ctx.globalAlpha = this.outlineOpacity * baseAlpha;
       this.ctx.drawImage(drawingLayer, drawingRect.x, drawingRect.y, drawingRect.width, drawingRect.height);
       this.ctx.globalCompositeOperation = 'source-atop';
       this.ctx.fillStyle = this.overlayColor;

@@ -23,6 +23,7 @@ export class OverlayControls {
       sightSizeGridBtn: document.getElementById('sightSizeGridTool'),
       ghostBtn: document.getElementById('ghostTool'),
       analysisSelectBtn: document.getElementById('analysisSelectTool'),
+      clearAnalysisBtn: document.getElementById('clearAnalysisTool'),
       faceBtn: document.getElementById('faceTool'),
       bodyBtn: document.getElementById('bodyTool'),
       poseModelSelect: document.getElementById('poseModelQuality'),
@@ -358,6 +359,7 @@ export class OverlayControls {
       sightSizeGridBtn,
       ghostBtn,
       analysisSelectBtn,
+      clearAnalysisBtn,
       faceBtn,
       bodyBtn,
       poseModelSelect,
@@ -456,7 +458,7 @@ export class OverlayControls {
       const enabled = !!this.canvasManager?.outlineAssistEnabled;
       const aligned = !!this.canvasManager?.outlineAssistAligned;
       const score = enabled ? this.canvasManager?.outlineAssistLastScore ?? 0 : null;
-      const scoreText = typeof score === 'number' && !Number.isNaN(score) ? score.toFixed(2) : '--';
+      const scoreText = typeof score === 'number' && !Number.isNaN(score) ? `${Math.round(score * 100)}%` : '--';
       outlineAssistReadout.textContent = enabled
         ? `Alignment: ${scoreText}${aligned ? ' (Aligned)' : ''}`
         : 'Alignment: --';
@@ -666,11 +668,11 @@ export class OverlayControls {
       sightSizeGridBtn.addEventListener('click', () => {
         if (this.canvasManager.sightSizeGridVisible) {
           this.canvasManager.clearSightSizeGrid();
-          sightSizeGridBtn.textContent = 'Sight-Size Grid';
+          sightSizeGridBtn.textContent = 'Base Unit Grid';
         } else {
           const baseUnit = this.measurementTool?.getBaseDistance?.();
           this.canvasManager.drawSightSizeGrid(baseUnit || null);
-          sightSizeGridBtn.textContent = 'Sight-Size Grid (On)';
+          sightSizeGridBtn.textContent = 'Base Unit Grid (On)';
         }
         this.closePanel();
       });
@@ -681,7 +683,7 @@ export class OverlayControls {
         const divisions = Number.parseInt(choice, 10) || 8;
         const baseUnit = this.measurementTool?.getBaseDistance?.();
         this.canvasManager.drawSightSizeGrid(baseUnit || null, divisions);
-        sightSizeGridBtn.textContent = 'Sight-Size Grid (On)';
+        sightSizeGridBtn.textContent = 'Base Unit Grid (On)';
       });
     }
 
@@ -864,6 +866,13 @@ export class OverlayControls {
         this.closePanel();
       });
       updateAnalysisSelectBtn();
+    }
+    if (clearAnalysisBtn) {
+      clearAnalysisBtn.addEventListener('click', () => {
+        this.canvasManager.clearAnalysisSelection();
+        this.updateCritiqueSummary(null);
+        this.closePanel();
+      });
     }
 
     if (faceBtn) {
