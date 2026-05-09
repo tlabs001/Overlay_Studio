@@ -463,6 +463,12 @@ body.light .tools-panel {
   gap:6px;
   font-size:12px;
 }
+.opacity-controls label{
+  display:grid;
+  grid-template-columns: 120px 1fr;
+  align-items:center;
+  gap:10px;
+}
 .thumb-clear{
   position:absolute;top:6px;right:6px;z-index:2;border:none;border-radius:999px;width:22px;height:22px;cursor:pointer;
 }

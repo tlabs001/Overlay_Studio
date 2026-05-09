@@ -628,9 +628,8 @@ export class CanvasManager {
 
   handleWheel(event) {
     if (!this.drawingAdjustmentEnabled || !this.drawingImage) return;
-    const origin = this.getPointerPosition(event);
     const factor = event.deltaY < 0 ? 1.05 : 0.95;
-    this.scaleDrawing(factor, origin);
+    this.scaleDrawing(factor);
     event.preventDefault();
   }
 
