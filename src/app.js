@@ -106,6 +106,7 @@ const initializeApp = () => {
   const canvasPlaceholder = document.getElementById('canvasPlaceholder');
   const diffBtn = document.getElementById('diffTool');
   const saveOverlayBtn = document.getElementById('saveOverlay');
+  const resetDifferenceBtn = document.getElementById('resetDifference');
   const normalViewBtn = document.getElementById('normalViewTool');
   const apiKeyInput = document.getElementById('apiKeyInput');
   const apiKeySaveBtn = document.getElementById('apiKeySaveBtn');
@@ -594,6 +595,14 @@ const initializeApp = () => {
         return;
       }
       updateDifferenceSummary(result.averageDifference);
+      updateOverlayPreview();
+    });
+  }
+
+  if (resetDifferenceBtn) {
+    resetDifferenceBtn.addEventListener('click', () => {
+      canvasManager.resetToNormalRender();
+      updateDifferenceSummary(null);
       updateOverlayPreview();
     });
   }
