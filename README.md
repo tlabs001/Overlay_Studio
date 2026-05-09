@@ -80,6 +80,84 @@ drawing-overlay-app/
 
 See [GitHub Project Board](https://github.com/tlabs001/Overlay/projects) or open issues for detailed planning.
 
+
+## ▲ Deploy to Vercel (`overlay_studios`)
+
+This project is a static app with a lightweight Node dev server for local development, so Vercel deployment should use **Static Site** settings (no custom server runtime).
+
+### 1) Prepare the repo
+
+1. Make sure your project is committed to GitHub (or GitLab/Bitbucket).
+2. Confirm the root contains `index.html`, `src/`, and `public/`.
+3. No build step is required.
+
+### 2) Import into Vercel
+
+1. Go to [vercel.com/new](https://vercel.com/new).
+2. Import the `overlay_studios` repository.
+3. In **Configure Project**:
+   - **Framework Preset**: `Other`
+   - **Root Directory**: `.`
+   - **Build Command**: *(leave empty)*
+   - **Output Directory**: `.`
+   - **Install Command**: *(leave empty or `npm install`)*
+4. Click **Deploy**.
+
+### 3) Add `vercel.json` (recommended)
+
+Create a `vercel.json` in the repo root so routing and caching are explicit:
+
+```json
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "headers": [
+    {
+      "source": "/service-worker.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/public/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ],
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
+```
+
+Then commit and push; Vercel will auto-redeploy.
+
+### 4) Environment variables (optional)
+
+If you later move cloud API calls server-side, add env vars in **Vercel → Project → Settings → Environment Variables**. For the current client-only flow, no required Vercel env vars are needed.
+
+### 5) Verify after deploy
+
+1. Open the Vercel URL.
+2. Confirm `index.html` loads and both image uploads work.
+3. Confirm `manifest.json` and `service-worker.js` load successfully.
+4. On mobile, test install prompt / Add to Home Screen behavior.
+
+### 6) CLI alternative (optional)
+
+```bash
+npm i -g vercel
+vercel login
+vercel
+vercel --prod
+```
+
+When prompted:
+- Link to existing `overlay_studios` project (or create new).
+- Set output directory to `.`.
+
+
 ---
 
 ## 📄 License
