@@ -2318,8 +2318,7 @@ export class CanvasManager {
     let sumPy = 0;
     let sumQx = 0;
     let sumQy = 0;
-    let sumCross = 0;
-    let sumQQ = 0;
+    const sampledPairs = [];
 
     for (let i = 0; i < pairCount; i += step) {
       const refPoint = referenceProjected[i];
@@ -2335,6 +2334,7 @@ export class CanvasManager {
       sumPy += pcY;
       sumQx += qcX;
       sumQy += qcY;
+      sampledPairs.push({ qcX, qcY, pcX, pcY });
       used += 1;
     }
 
@@ -2345,34 +2345,86 @@ export class CanvasManager {
     const meanQx = sumQx / used;
     const meanQy = sumQy / used;
 
-    for (let i = 0; i < pairCount; i += step) {
-      const refPoint = referenceProjected[i];
-      const drawPoint = drawingProjected[i];
-      if (!refPoint || !drawPoint) continue;
+    const evaluateCandidate = (rotationDeg = 0) => {
+      const theta = (rotationDeg * Math.PI) / 180;
+      const cos = Math.cos(theta);
+      const sin = Math.sin(theta);
+      let sumCross = 0;
+      let sumQQ = 0;
+      let error = 0;
 
-      const qcX = drawPoint.x - center.x - meanQx;
-      const qcY = drawPoint.y - center.y - meanQy;
-      const pcX = refPoint.x - center.x - meanPx;
-      const pcY = refPoint.y - center.y - meanPy;
+      for (const pair of sampledPairs) {
+        const qcX = pair.qcX - meanQx;
+        const qcY = pair.qcY - meanQy;
+        const pcX = pair.pcX - meanPx;
+        const pcY = pair.pcY - meanPy;
+        const rotX = qcX * cos - qcY * sin;
+        const rotY = qcX * sin + qcY * cos;
+        sumCross += rotX * pcX + rotY * pcY;
+        sumQQ += rotX * rotX + rotY * rotY;
+      }
 
-      sumCross += qcX * pcX + qcY * pcY;
-      sumQQ += qcX * qcX + qcY * qcY;
+      if (!sumQQ) return null;
+
+      const rawScale = sumCross / sumQQ;
+      const scale = Math.min(Math.max(rawScale, 0.1), 8);
+      if (!Number.isFinite(scale)) return null;
+
+      for (const pair of sampledPairs) {
+        const qcX = pair.qcX - meanQx;
+        const qcY = pair.qcY - meanQy;
+        const pcX = pair.pcX - meanPx;
+        const pcY = pair.pcY - meanPy;
+        const rotX = qcX * cos - qcY * sin;
+        const rotY = qcX * sin + qcY * cos;
+        const dx = pcX - rotX * scale;
+        const dy = pcY - rotY * scale;
+        error += dx * dx + dy * dy;
+      }
+
+      return {
+        rotationDeg: this.normalizeRotationDegrees(rotationDeg),
+        scale,
+        offsetX: meanPx - scale * (meanQx * cos - meanQy * sin),
+        offsetY: meanPy - scale * (meanQx * sin + meanQy * cos),
+        error,
+      };
+    };
+
+    let rotationNumerator = 0;
+    let rotationDenominator = 0;
+    for (const pair of sampledPairs) {
+      const qcX = pair.qcX - meanQx;
+      const qcY = pair.qcY - meanQy;
+      const pcX = pair.pcX - meanPx;
+      const pcY = pair.pcY - meanPy;
+      rotationNumerator += qcX * pcY - qcY * pcX;
+      rotationDenominator += qcX * pcX + qcY * pcY;
+    }
+    const optimalRotation = (Math.atan2(rotationNumerator, rotationDenominator) * 180) / Math.PI;
+    const defaultCandidate = evaluateCandidate(0);
+    const rotatedCandidate = evaluateCandidate(optimalRotation);
+    const fallbackCandidate = evaluateCandidate(this.drawingTransform.rotationDeg || 0);
+    const candidates = [defaultCandidate, rotatedCandidate, fallbackCandidate].filter(Boolean);
+    if (!candidates.length) return false;
+
+    let best = candidates[0];
+    for (const candidate of candidates.slice(1)) {
+      if (candidate.error < best.error) {
+        best = candidate;
+      }
     }
 
-    if (!sumQQ) return false;
-
-    const rawScale = sumCross / sumQQ;
-    const scale = Math.min(Math.max(rawScale, 0.1), 8);
-    if (!Number.isFinite(scale)) return false;
-
-    const offsetX = meanPx - scale * meanQx;
-    const offsetY = meanPy - scale * meanQy;
+    if (defaultCandidate && best !== defaultCandidate) {
+      const defaultIsClose = defaultCandidate.error <= best.error * 1.03;
+      if (defaultIsClose) best = defaultCandidate;
+    }
 
     this.drawingTransform = {
-      scale,
-      offsetX,
-      offsetY,
-      rotationDeg: this.drawingTransform.rotationDeg || 0,
+      scale: best.scale,
+      offsetX: best.offsetX,
+      offsetY: best.offsetY,
+      rotationDeg: best.rotationDeg,
     };
     this.render();
     return true;
