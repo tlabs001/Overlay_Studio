@@ -3001,7 +3001,8 @@ export class CanvasManager {
       : null;
 
     if (!layer) return;
-    const drawingLayer = this.drawingImage
+    const shouldRenderDrawingOverlay = Boolean(this.referenceImage && this.drawingImage);
+    const drawingLayer = shouldRenderDrawingOverlay
       ? this.createLayerFromImage(this.drawingImage, drawingRect)
       : null;
 
@@ -3020,7 +3021,8 @@ export class CanvasManager {
       );
     } else {
       this.ctx.save();
-      this.ctx.globalAlpha = baseAlpha * this.referenceOpacity;
+      const baseLayerAlpha = this.referenceImage ? this.referenceOpacity : 1;
+      this.ctx.globalAlpha = baseAlpha * baseLayerAlpha;
       this.ctx.drawImage(layer, simplifiedRect.x, simplifiedRect.y, simplifiedRect.width, simplifiedRect.height);
       this.ctx.restore();
     }
@@ -3037,7 +3039,7 @@ export class CanvasManager {
       this.ctx.restore();
     }
 
-    if (this.drawingImage && this.drawingAdjustmentEnabled) {
+    if (this.referenceImage && this.drawingImage && this.drawingAdjustmentEnabled) {
       this.drawResizeHandles(drawingRect);
     }
 

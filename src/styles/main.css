@@ -496,6 +496,11 @@ body.light .tools-panel {
   object-fit: contain;
 }
 
+.image-thumb img:not([src]),
+.image-thumb img[src=''] {
+  display: none;
+}
+
 .image-thumb.has-image .thumb-placeholder {
   display: none;
 }
@@ -581,6 +586,11 @@ body.light .tools-panel {
   background-position: center;
   background-repeat: no-repeat;
   aspect-ratio: 16 / 9;
+}
+
+.preview-window::before,
+.preview-window::after {
+  content: none !important;
 }
 
 .analysis-settings {
@@ -805,7 +815,3 @@ body.light .tools-panel {
   }
 }
 
-
-#drawingPreview::before {
-  content: none;
-}
