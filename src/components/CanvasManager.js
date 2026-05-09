@@ -452,9 +452,14 @@ export class CanvasManager {
       const point = this.getPointerPosition(event);
       const drawingRect = this.getDrawingRect();
       if (this.rotationHoverState?.visible) {
-        const dx = point.x - this.rotationHoverState.icon.x;
-        const dy = point.y - this.rotationHoverState.icon.y;
-        if (Math.hypot(dx, dy) <= 16) {
+        const hoverCorner = this.getResizeHandlePoint(this.rotationHoverState.handle, drawingRect);
+        const iconDx = point.x - this.rotationHoverState.icon.x;
+        const iconDy = point.y - this.rotationHoverState.icon.y;
+        const cornerDx = point.x - hoverCorner.x;
+        const cornerDy = point.y - hoverCorner.y;
+        const nearRotationIcon = Math.hypot(iconDx, iconDy) <= 16;
+        const nearRotationCorner = Math.hypot(cornerDx, cornerDy) <= 44;
+        if (nearRotationIcon || nearRotationCorner) {
           const center = {
             x: drawingRect.x + drawingRect.width / 2,
             y: drawingRect.y + drawingRect.height / 2,
@@ -670,6 +675,12 @@ export class CanvasManager {
     if (this.drawingRotationState && event.pointerId === this.drawingRotationState.pointerId) {
       this.canvas.releasePointerCapture(event.pointerId);
       this.drawingRotationState = null;
+      this.rotationHoverState = null;
+      if (this.rotationHoverTimer) {
+        clearTimeout(this.rotationHoverTimer);
+        this.rotationHoverTimer = null;
+      }
+      this.render();
       return;
     }
 
@@ -694,6 +705,16 @@ export class CanvasManager {
     const factor = event.deltaY < 0 ? 1.05 : 0.95;
     this.scaleDrawing(factor);
     event.preventDefault();
+  }
+
+  resetDrawingRotation() {
+    this.drawingTransform.rotationDeg = 0;
+    this.rotationHoverState = null;
+    if (this.rotationHoverTimer) {
+      clearTimeout(this.rotationHoverTimer);
+      this.rotationHoverTimer = null;
+    }
+    this.render();
   }
 
   ensureLayer(layerName) {

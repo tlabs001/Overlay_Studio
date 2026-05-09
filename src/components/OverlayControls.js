@@ -69,6 +69,7 @@ export class OverlayControls {
       moveRightBtn: document.getElementById('moveRightTool'),
       scaleUpBtn: document.getElementById('scaleUpTool'),
       scaleDownBtn: document.getElementById('scaleDownTool'),
+      resetRotationBtn: document.getElementById('resetRotationTool'),
     };
   }
 
@@ -405,6 +406,7 @@ export class OverlayControls {
       moveRightBtn,
       scaleUpBtn,
       scaleDownBtn,
+      resetRotationBtn,
     } = els;
 
     const warnMissing = (el, name) => {
@@ -1044,6 +1046,13 @@ export class OverlayControls {
     if (scaleDownBtn) {
       scaleDownBtn.addEventListener('click', () => {
         this.canvasManager.scaleDrawing(1 / scaleStep);
+        this.closePanel();
+      });
+    }
+
+    if (resetRotationBtn) {
+      resetRotationBtn.addEventListener('click', () => {
+        this.canvasManager.resetDrawingRotation();
         this.closePanel();
       });
     }
