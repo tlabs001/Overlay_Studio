@@ -24,7 +24,7 @@ export class CanvasManager {
     this.showPoseSegmentation = false;
     this.overlayColor = 'rgba(64, 86, 148, 0.65)';
     this.referenceOpacity = 1;
-    this.outlineOpacity = 1;
+    this.outlineOpacity = 0.5;
     this.sightSizeGridVisible = false;
     this.sightSizeBaseUnit = null;
     this.perspectiveMode = null;
