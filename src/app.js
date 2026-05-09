@@ -112,6 +112,10 @@ const initializeApp = () => {
   const apiModeToggle = document.getElementById('apiModeToggle');
   const apiStatusText = document.getElementById('apiStatusText');
   const apiToggleLabel = document.getElementById('apiToggleLabel');
+  const referenceClearBtn = document.getElementById('referenceClearBtn');
+  const drawingClearBtn = document.getElementById('drawingClearBtn');
+  const referenceOpacity = document.getElementById('referenceOpacity');
+  const outlineOpacity = document.getElementById('outlineOpacity');
 
   let cloudEnabled = localStorage.getItem(apiModeKey) === 'true';
   let apiHasKey = false;
@@ -249,7 +253,7 @@ const initializeApp = () => {
   const isImageFile = (file) => {
     if (!file) return false;
     if (file.type?.startsWith('image/')) return true;
-    return /\.(png|jpe?g|gif|bmp|webp|heic)$/i.test(file.name || '');
+    return /\.(png|jpe?g|gif|bmp|webp|heic|heif)$/i.test(file.name || '');
   };
 
   const loadImageFromFile = (file) =>
@@ -443,83 +447,9 @@ const initializeApp = () => {
     });
   };
 
-  const saveSession = () => {
-    if (!canvasManager.referenceImage || !canvasManager.drawingImage) {
-      window.alert('Load both a reference and drawing before saving a session.');
-      return;
-    }
+  const saveSession = () => ExportTool.exportSessionAsJSON(measurementTool, canvasManager);
 
-    const referenceImageData = imageToDataUrl(canvasManager.referenceImage);
-    const drawingImageData = imageToDataUrl(canvasManager.drawingImage);
-    if (!referenceImageData || !drawingImageData) {
-      window.alert('Unable to save session images. Please try reloading them.');
-      return;
-    }
-
-    const sessionData = {
-      measurement: measurementTool.getState(),
-      canvas: canvasManager.getState(),
-      referenceImageData,
-      drawingImageData,
-      timestamp: Date.now(),
-    };
-
-    localStorage.setItem('overlaySession', JSON.stringify(sessionData));
-    window.alert('Session saved for offline use.');
-  };
-
-  const loadSession = async () => {
-    const saved = localStorage.getItem('overlaySession');
-    if (!saved) {
-      window.alert('No saved session found.');
-      return;
-    }
-
-    let parsed = null;
-    try {
-      parsed = JSON.parse(saved);
-    } catch (error) {
-      console.error('Unable to parse saved session', error);
-      window.alert('Saved session is corrupted.');
-      return;
-    }
-
-    let referenceImage = null;
-    let drawingImage = null;
-    try {
-      if (parsed.referenceImageData) {
-        referenceImage = await loadImageFromDataUrl(parsed.referenceImageData);
-      }
-      if (parsed.drawingImageData) {
-        drawingImage = await loadImageFromDataUrl(parsed.drawingImageData);
-      }
-    } catch (error) {
-      console.error('Unable to restore saved images', error);
-      window.alert('Unable to load saved images. Try saving the session again.');
-      return;
-    }
-
-    if (referenceImage) {
-      canvasManager.setReferenceImage(referenceImage);
-      setThumbImage(referenceThumb, referenceThumbImage, referenceImage);
-    }
-    if (drawingImage) {
-      canvasManager.setDrawingImage(drawingImage);
-      setThumbImage(drawingThumb, drawingThumbImage, drawingImage);
-    }
-    if (parsed?.measurement) {
-      measurementTool.applyState(parsed.measurement);
-    }
-    if (parsed?.canvas) {
-      canvasManager.applyState(parsed.canvas);
-    }
-    measurementTool.draw();
-    canvasManager.render();
-    updatePreviewWindows();
-    updateCanvasPlaceholder();
-    updateOverlayPreview();
-    updateDifferenceSummary(null);
-  };
+  const loadSession = async () => window.alert('Use "Import Session" to load a saved session file.');
 
   setupCollapsibleSections();
 
@@ -611,6 +541,34 @@ const initializeApp = () => {
       const [file] = event.target.files || [];
       await handleImageUpload(file, 'drawing');
       drawingUpload.value = '';
+    });
+  }
+  if (referenceClearBtn) {
+    referenceClearBtn.addEventListener('click', () => {
+      canvasManager.setReferenceImage(null);
+      setThumbImage(referenceThumb, referenceThumbImage, null);
+      updatePreviewWindows();
+      updateCanvasPlaceholder();
+      updateOverlayPreview();
+    });
+  }
+  if (drawingClearBtn) {
+    drawingClearBtn.addEventListener('click', () => {
+      canvasManager.setDrawingImage(null);
+      setThumbImage(drawingThumb, drawingThumbImage, null);
+      updatePreviewWindows();
+      updateCanvasPlaceholder();
+      updateOverlayPreview();
+    });
+  }
+  if (referenceOpacity) {
+    referenceOpacity.addEventListener('input', (event) => {
+      canvasManager.setReferenceOpacity(event.target.value);
+    });
+  }
+  if (outlineOpacity) {
+    outlineOpacity.addEventListener('input', (event) => {
+      canvasManager.setOutlineOpacity(event.target.value);
     });
   }
 
