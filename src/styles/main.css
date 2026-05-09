@@ -804,3 +804,8 @@ body.light .tools-panel {
     grid-template-columns: 1fr;
   }
 }
+
+
+#drawingPreview::before {
+  content: none;
+}
