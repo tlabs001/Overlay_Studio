@@ -1076,6 +1076,17 @@ export class CanvasManager {
     this.differenceScore = null;
   }
 
+  clearAnalysisState() {
+    this.clearDifferenceLayer();
+    this.clearAnalysisSelection();
+    this.faceLandmarks = null;
+    this.poseLandmarks = null;
+    this.landmarkResults = null;
+    this.landmarkScore = null;
+    this.critiqueModeEnabled = false;
+    this.resetToNormalRender();
+  }
+
   renderNegativeSpace(referenceImage = this.referenceImage) {
     if (!referenceImage || !this.canvas) return;
     const rect = this.getDrawRect(referenceImage);
