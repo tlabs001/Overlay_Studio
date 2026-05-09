@@ -47,7 +47,7 @@ export class CanvasManager {
     this.assistModeEnabled = false;
     this.assistMaskStrokes = [];
     this.activeAssistStroke = null;
-    this.drawingTransform = { offsetX: 0, offsetY: 0, scale: 1 };
+    this.drawingTransform = { offsetX: 0, offsetY: 0, scale: 1, rotationDeg: 0 };
     this.drawingResizeState = null;
     this.gridLayer = null;
     this.perspectiveLayer = null;
@@ -62,6 +62,9 @@ export class CanvasManager {
     this.differenceScore = null;
     this.drawingAdjustmentEnabled = true;
     this.drawingDragState = null;
+    this.drawingRotationState = null;
+    this.rotationHoverState = null;
+    this.rotationHoverTimer = null;
     this.cloudAiEnabled = false;
     this.cloudVision = null;
     this.outlineAssistEnabled = false;
@@ -448,6 +451,26 @@ export class CanvasManager {
     ) {
       const point = this.getPointerPosition(event);
       const drawingRect = this.getDrawingRect();
+      if (this.rotationHoverState?.visible) {
+        const dx = point.x - this.rotationHoverState.icon.x;
+        const dy = point.y - this.rotationHoverState.icon.y;
+        if (Math.hypot(dx, dy) <= 16) {
+          const center = {
+            x: drawingRect.x + drawingRect.width / 2,
+            y: drawingRect.y + drawingRect.height / 2,
+          };
+          this.drawingRotationState = {
+            pointerId: event.pointerId,
+            center,
+            startPointerAngle: Math.atan2(point.y - center.y, point.x - center.x),
+            startRotationDeg: this.drawingTransform.rotationDeg || 0,
+          };
+          this.canvas.setPointerCapture(event.pointerId);
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+      }
       const handleSize = 18;
       const resizeHandle = this.getResizeHandleAtPoint(point, drawingRect, handleSize);
       if (resizeHandle) {
@@ -558,10 +581,22 @@ export class CanvasManager {
         scale: nextScale,
         offsetX: nextCenterX - baseCenterX,
         offsetY: nextCenterY - baseCenterY,
+        rotationDeg: this.drawingResizeState.startTransform.rotationDeg || 0,
       };
       event.preventDefault();
       event.stopPropagation();
       this.render();
+      return;
+    }
+    if (this.drawingRotationState && event.pointerId === this.drawingRotationState.pointerId) {
+      const point = this.getPointerPosition(event);
+      const { center, startPointerAngle, startRotationDeg } = this.drawingRotationState;
+      const angle = Math.atan2(point.y - center.y, point.x - center.x);
+      const deltaDeg = ((angle - startPointerAngle) * 180) / Math.PI;
+      this.drawingTransform.rotationDeg = this.normalizeRotationDegrees(startRotationDeg + deltaDeg);
+      this.render();
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
 
@@ -575,6 +610,29 @@ export class CanvasManager {
       event.stopPropagation();
       this.render();
       return;
+    }
+    if (this.drawingAdjustmentEnabled && this.drawingImage && !this.drawingResizeState && !this.drawingDragState) {
+      const point = this.getPointerPosition(event);
+      const drawingRect = this.getDrawingRect();
+      const hoverHandle = this.getResizeHandleAtPoint(point, drawingRect, 18);
+      if (hoverHandle) {
+        if (this.rotationHoverState?.handle !== hoverHandle) {
+          if (this.rotationHoverTimer) clearTimeout(this.rotationHoverTimer);
+          this.rotationHoverTimer = setTimeout(() => {
+            const corner = this.getResizeHandlePoint(hoverHandle, this.getDrawingRect());
+            this.rotationHoverState = {
+              handle: hoverHandle,
+              visible: true,
+              icon: { x: corner.x + 24, y: corner.y - 24 },
+            };
+            this.render();
+          }, 500);
+        }
+      } else if (this.rotationHoverState?.visible) {
+        this.rotationHoverState = null;
+        if (this.rotationHoverTimer) clearTimeout(this.rotationHoverTimer);
+        this.render();
+      }
     }
 
     if (!this.activeTraceStroke && !this.activeAssistStroke) return;
@@ -607,6 +665,11 @@ export class CanvasManager {
     if (this.drawingResizeState && event.pointerId === this.drawingResizeState.pointerId) {
       this.canvas.releasePointerCapture(event.pointerId);
       this.drawingResizeState = null;
+      return;
+    }
+    if (this.drawingRotationState && event.pointerId === this.drawingRotationState.pointerId) {
+      this.canvas.releasePointerCapture(event.pointerId);
+      this.drawingRotationState = null;
       return;
     }
 
@@ -1199,7 +1262,12 @@ export class CanvasManager {
   }
 
   resetDrawingTransform() {
-    this.drawingTransform = { offsetX: 0, offsetY: 0, scale: 1 };
+    this.drawingTransform = { offsetX: 0, offsetY: 0, scale: 1, rotationDeg: 0 };
+  }
+
+  normalizeRotationDegrees(degrees = 0) {
+    const normalized = ((degrees % 360) + 360) % 360;
+    return Number(normalized.toFixed(1));
   }
 
   getLandmarkBounds(landmarkSet) {
@@ -1318,14 +1386,27 @@ export class CanvasManager {
 
   getResizeHandleAtPoint(point, rect, size = 16) {
     if (!rect || !rect.width || !rect.height) return false;
-    const corners = [
-      { handle: 'top-left', x: rect.x, y: rect.y },
-      { handle: 'top-right', x: rect.x + rect.width, y: rect.y },
-      { handle: 'bottom-left', x: rect.x, y: rect.y + rect.height },
-      { handle: 'bottom-right', x: rect.x + rect.width, y: rect.y + rect.height },
-    ];
-    const hit = corners.find((corner) => Math.abs(point.x - corner.x) <= size && Math.abs(point.y - corner.y) <= size);
+    const corners = this.getDrawingCorners(rect);
+    const hit = corners.find((corner) => Math.hypot(point.x - corner.x, point.y - corner.y) <= size);
     return hit ? hit.handle : null;
+  }
+
+  getDrawingCorners(rect) {
+    if (!rect) return [];
+    const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    const angle = ((this.drawingTransform.rotationDeg || 0) * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const rotate = (x, y) => ({
+      x: center.x + (x - center.x) * cos - (y - center.y) * sin,
+      y: center.y + (x - center.x) * sin + (y - center.y) * cos,
+    });
+    return [
+      { handle: 'top-left', ...rotate(rect.x, rect.y) },
+      { handle: 'top-right', ...rotate(rect.x + rect.width, rect.y) },
+      { handle: 'bottom-left', ...rotate(rect.x, rect.y + rect.height) },
+      { handle: 'bottom-right', ...rotate(rect.x + rect.width, rect.y + rect.height) },
+    ];
   }
 
   isNearResizeHandle(point, rect, size = 16) {
@@ -1343,17 +1424,7 @@ export class CanvasManager {
   }
 
   getResizeHandlePoint(handle, rect) {
-    switch (handle) {
-      case 'top-left':
-        return { x: rect.x, y: rect.y };
-      case 'top-right':
-        return { x: rect.x + rect.width, y: rect.y };
-      case 'bottom-left':
-        return { x: rect.x, y: rect.y + rect.height };
-      case 'bottom-right':
-      default:
-        return { x: rect.x + rect.width, y: rect.y + rect.height };
-    }
+    return this.getDrawingCorners(rect).find((corner) => corner.handle === handle) || { x: rect.x, y: rect.y };
   }
 
   autoAlignDrawing(options = {}) {
@@ -1382,6 +1453,7 @@ export class CanvasManager {
           offsetX: reference.centerX - drawing.centerX,
           offsetY: reference.centerY - drawing.centerY,
           scale: scaleMatch,
+          rotationDeg: this.drawingTransform.rotationDeg || 0,
         };
         this.render();
         return;
@@ -1432,6 +1504,7 @@ export class CanvasManager {
         scale: targetTransform.scale,
         offsetX: targetTransform.offsetX + centerAdjustment.x,
         offsetY: targetTransform.offsetY + centerAdjustment.y,
+        rotationDeg: this.drawingTransform.rotationDeg || 0,
       };
       this.render();
       return;
@@ -1446,6 +1519,7 @@ export class CanvasManager {
         offsetX: reference.centerX - drawing.centerX,
         offsetY: reference.centerY - drawing.centerY,
         scale: scaleMatch,
+        rotationDeg: this.drawingTransform.rotationDeg || 0,
       };
       this.render();
       return;
@@ -1462,6 +1536,7 @@ export class CanvasManager {
       offsetX: refCenterX - drawCenterX,
       offsetY: refCenterY - drawCenterY,
       scale: scaleMatch,
+      rotationDeg: this.drawingTransform.rotationDeg || 0,
     };
     this.render();
   }
@@ -2276,6 +2351,7 @@ export class CanvasManager {
       scale,
       offsetX,
       offsetY,
+      rotationDeg: this.drawingTransform.rotationDeg || 0,
     };
     this.render();
     return true;
@@ -2962,12 +3038,7 @@ export class CanvasManager {
     if (!this.ctx || !rect?.width || !rect?.height) return;
     const handleSize = 10;
     const half = handleSize / 2;
-    const corners = [
-      { x: rect.x, y: rect.y },
-      { x: rect.x + rect.width, y: rect.y },
-      { x: rect.x, y: rect.y + rect.height },
-      { x: rect.x + rect.width, y: rect.y + rect.height },
-    ];
+    const corners = this.getDrawingCorners(rect);
 
     this.ctx.save();
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
@@ -2979,6 +3050,29 @@ export class CanvasManager {
       this.ctx.fill();
       this.ctx.stroke();
     });
+    this.ctx.restore();
+  }
+
+  drawRotationHoverControl() {
+    if (!this.rotationHoverState?.visible) return;
+    const { x, y } = this.rotationHoverState.icon;
+    const degrees = this.normalizeRotationDegrees(this.drawingTransform.rotationDeg || 0);
+    this.ctx.save();
+    this.ctx.strokeStyle = '#111';
+    this.ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    this.ctx.lineWidth = 2;
+    this.ctx.beginPath();
+    this.ctx.arc(x, y, 12, Math.PI * 0.2, Math.PI * 1.6);
+    this.ctx.stroke();
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + 10, y - 2);
+    this.ctx.lineTo(x + 14, y - 8);
+    this.ctx.lineTo(x + 6, y - 8);
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.fillStyle = '#111';
+    this.ctx.font = '12px Arial';
+    this.ctx.fillText(`${degrees.toFixed(1)}°`, x + 18, y + 4);
     this.ctx.restore();
   }
 
@@ -3041,17 +3135,22 @@ export class CanvasManager {
     if (drawingLayer) {
       this.ctx.save();
       this.ctx.globalAlpha = this.outlineOpacity * baseAlpha;
-      this.ctx.drawImage(drawingLayer, drawingRect.x, drawingRect.y, drawingRect.width, drawingRect.height);
+      const centerX = drawingRect.x + drawingRect.width / 2;
+      const centerY = drawingRect.y + drawingRect.height / 2;
+      this.ctx.translate(centerX, centerY);
+      this.ctx.rotate(((this.drawingTransform.rotationDeg || 0) * Math.PI) / 180);
+      this.ctx.drawImage(drawingLayer, -drawingRect.width / 2, -drawingRect.height / 2, drawingRect.width, drawingRect.height);
       if (this.ghostModeEnabled) {
         this.ctx.globalCompositeOperation = 'source-atop';
         this.ctx.fillStyle = this.overlayColor;
-        this.ctx.fillRect(drawingRect.x, drawingRect.y, drawingRect.width, drawingRect.height);
+        this.ctx.fillRect(-drawingRect.width / 2, -drawingRect.height / 2, drawingRect.width, drawingRect.height);
       }
       this.ctx.restore();
     }
 
     if (this.referenceImage && this.drawingImage && this.drawingAdjustmentEnabled) {
       this.drawResizeHandles(drawingRect);
+      this.drawRotationHoverControl();
     }
 
     if (this.gridLayer && this.sightSizeGridVisible) {
