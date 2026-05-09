@@ -3039,7 +3039,7 @@ export class CanvasManager {
       this.ctx.restore();
     }
 
-    if (this.drawingImage && this.drawingAdjustmentEnabled) {
+    if (this.referenceImage && this.drawingImage && this.drawingAdjustmentEnabled) {
       this.drawResizeHandles(drawingRect);
     }
 

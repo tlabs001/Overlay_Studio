@@ -496,6 +496,11 @@ body.light .tools-panel {
   object-fit: contain;
 }
 
+.image-thumb img:not([src]),
+.image-thumb img[src=''] {
+  display: none;
+}
+
 .image-thumb.has-image .thumb-placeholder {
   display: none;
 }
