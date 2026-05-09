@@ -426,6 +426,7 @@ export class OverlayControls {
     const syncUIFromState = () => {
       const interactionMode = this.canvasManager?.interactionMode || 'none';
       const traceEnabled = !!this.canvasManager?.traceModeEnabled;
+      const ghostEnabled = !!this.canvasManager?.ghostModeEnabled;
 
       if (measureBtn) {
         const measureActive = interactionMode === 'measure';
@@ -450,6 +451,11 @@ export class OverlayControls {
       if (traceBtn) {
         traceBtn.textContent = traceEnabled ? 'Trace (On)' : 'Trace';
         traceBtn.classList.toggle('active', traceEnabled);
+      }
+
+      if (ghostBtn) {
+        ghostBtn.textContent = ghostEnabled ? 'Ghost (On)' : 'Ghost';
+        ghostBtn.classList.toggle('active', ghostEnabled);
       }
     };
 
@@ -690,6 +696,7 @@ export class OverlayControls {
     if (ghostBtn) {
       ghostBtn.addEventListener('click', () => {
         this.canvasManager.toggleGhostMode();
+        syncUIFromState();
         this.closePanel();
       });
     }

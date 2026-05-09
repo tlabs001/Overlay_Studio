@@ -55,7 +55,7 @@
             </div>
             <div class="opacity-controls">
               <label><span>Reference opacity</span><input id="referenceOpacity" type="range" min="0" max="100" value="100" /></label>
-              <label><span>Drawing opacity</span><input id="outlineOpacity" type="range" min="0" max="100" value="50" /></label>
+              <label><span>Drawing opacity</span><input id="outlineOpacity" type="range" min="0" max="100" value="100" /></label>
             </div>
           </div>
           <div class="difference-summary" id="differenceSummary">Load both images to analyze differences.</div>
@@ -110,7 +110,6 @@
                 <button id="brushSizeDownTool" class="tool-chip" type="button">Brush Size -</button>
                 <button id="undoBrushTool" class="tool-chip" type="button">Undo Brush</button>
                 <button id="clearBrushTool" class="tool-chip" type="button">Clear Brush</button>
-                <button id="traceTool" class="tool-chip" type="button">Trace</button>
               </div>
             </div>
           </div>
@@ -129,6 +128,7 @@
                 </button>
                 <button id="negativeSpaceTool" class="tool-chip" type="button">Negative Space</button>
                 <button id="simplifyShapesTool" class="tool-chip" type="button">Simplify Shapes</button>
+                <button id="ghostTool" class="tool-chip" type="button">Ghost</button>
                 <button id="normalViewTool" class="tool-chip" type="button">Normal View</button>
               </div>
               <div id="outlineAssistReadout" class="outline-assist-readout" aria-live="polite">

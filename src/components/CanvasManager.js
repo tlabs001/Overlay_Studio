@@ -24,7 +24,7 @@ export class CanvasManager {
     this.showPoseSegmentation = false;
     this.overlayColor = 'rgba(64, 86, 148, 0.65)';
     this.referenceOpacity = 1;
-    this.outlineOpacity = 0.5;
+    this.outlineOpacity = 1;
     this.sightSizeGridVisible = false;
     this.sightSizeBaseUnit = null;
     this.perspectiveMode = null;
@@ -3029,9 +3029,11 @@ export class CanvasManager {
       this.ctx.save();
       this.ctx.globalAlpha = this.outlineOpacity * baseAlpha;
       this.ctx.drawImage(drawingLayer, drawingRect.x, drawingRect.y, drawingRect.width, drawingRect.height);
-      this.ctx.globalCompositeOperation = 'source-atop';
-      this.ctx.fillStyle = this.overlayColor;
-      this.ctx.fillRect(drawingRect.x, drawingRect.y, drawingRect.width, drawingRect.height);
+      if (this.ghostModeEnabled) {
+        this.ctx.globalCompositeOperation = 'source-atop';
+        this.ctx.fillStyle = this.overlayColor;
+        this.ctx.fillRect(drawingRect.x, drawingRect.y, drawingRect.width, drawingRect.height);
+      }
       this.ctx.restore();
     }
 
