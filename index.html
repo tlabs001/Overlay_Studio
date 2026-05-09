@@ -11,7 +11,6 @@
   <link rel="manifest" href="/public/manifest.json" />
   <link rel="apple-touch-icon" href="/public/icons/app-icon.png" />
   <link rel="stylesheet" href="src/styles/main.css" />
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
 </head>
 <body>
   <div id="app">
@@ -168,52 +167,6 @@
               </div>
             </div>
           </div>
-          <div class="tool-subsection collapsed">
-            <button class="subsection-header" type="button" aria-expanded="false">
-              <div class="subsection-label">Analysis</div>
-              <span class="chevron" aria-hidden="true"></span>
-            </button>
-            <div class="subsection-body" aria-hidden="true">
-              <div class="tools-grid">
-                <button id="analysisSelectTool" class="tool-chip" type="button">Select Area</button>
-                <button id="faceTool" class="tool-chip" type="button">Face</button>
-                <button id="bodyTool" class="tool-chip" type="button">Body</button>
-                <button id="critiqueTool" class="tool-chip" type="button">Critique</button>
-              </div>
-              <div class="analysis-settings">
-                <label class="analysis-settings__label" for="poseModelQuality">Body model</label>
-                <select id="poseModelQuality" class="analysis-settings__select">
-                  <option value="lite">Lite (fast)</option>
-                  <option value="full" selected>Full (better)</option>
-                  <option value="heavy">Heavy (best)</option>
-                </select>
-                <span id="poseModelStatus" class="analysis-settings__status" aria-live="polite"></span>
-              </div>
-              <div class="analysis-controls">
-                <label class="analysis-toggle">
-                  <input type="checkbox" id="togglePupils" />
-                  <span>Show pupils</span>
-                </label>
-                <label class="analysis-toggle">
-                  <input type="checkbox" id="toggleIrises" />
-                  <span>Show irises</span>
-                </label>
-                <label class="analysis-toggle">
-                  <span>Pose density</span>
-                  <select id="poseDensity" class="analysis-settings__select analysis-settings__select--inline">
-                    <option value="0">Off</option>
-                    <option value="1">Low</option>
-                    <option value="2">Medium</option>
-                    <option value="3">High</option>
-                  </select>
-                </label>
-                <label class="analysis-toggle">
-                  <input type="checkbox" id="toggleSegmentation" />
-                  <span>Show body silhouette (beta)</span>
-                </label>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div class="panel-section">
@@ -262,7 +215,7 @@
               <p class="placeholder-body">Drop in your reference and drawing images to see them combined here in real-time.</p>
               <ul class="placeholder-list">
                 <li>Use the upload tiles on the left or drag files directly onto the canvas.</li>
-                <li>Try the analysis tools to highlight outlines, grids, and differences.</li>
+                <li>Use overlay tools to highlight outlines, grids, and differences.</li>
                 <li>Switch themes any time with the buttons in the header.</li>
               </ul>
             </div>
@@ -273,28 +226,6 @@
     </div>
 
     <button id="fabBtn" class="fab" type="button" aria-label="Open tools">+</button>
-    <div id="apiBar" class="api-bar" role="region" aria-label="Cloud AI">
-      <div class="api-bar__left">
-        <span class="api-bar__label">Cloud AI</span>
-        <input
-          id="apiKeyInput"
-          class="api-bar__input"
-          type="password"
-          placeholder="Paste API key…"
-          autocomplete="off"
-        />
-        <button id="apiKeySaveBtn" class="api-bar__btn" type="button">Enter</button>
-      </div>
-
-      <div class="api-bar__right">
-        <label class="api-toggle">
-          <input id="apiModeToggle" type="checkbox" />
-          <span class="api-toggle__track" aria-hidden="true"></span>
-          <span class="api-toggle__text" id="apiToggleLabel">OFF</span>
-        </label>
-        <span id="apiStatusText" class="api-bar__status" aria-live="polite"></span>
-      </div>
-    </div>
   </div>
 
   <script type="module" src="src/app.js"></script>
