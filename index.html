@@ -30,7 +30,7 @@
       <aside id="toolsPanel" class="tools-panel open" aria-label="Tools panel">
         <div class="panel-grip" aria-hidden="true"></div>
 
-        <div class="panel-section">
+        <div class="panel-section" data-panel-section="image-sources">
           <div class="section-title">Image sources</div>
           <div class="upload-row">
             <label class="upload-tile" data-upload-target="reference">
@@ -65,7 +65,7 @@
           </div>
         </div>
 
-        <div class="panel-section">
+        <div class="panel-section" data-panel-section="overlay-tools">
           <div class="section-title">Overlay tools</div>
           <div class="tool-subsection collapsed">
             <button class="subsection-header" type="button" aria-expanded="false">
@@ -152,7 +152,7 @@
               </div>
             </div>
           </div>
-          <div class="tool-subsection collapsed">
+          <div class="tool-subsection collapsed" data-panel-section="analysis">
             <button class="subsection-header" type="button" aria-expanded="false">
               <div class="subsection-label">Analysis</div>
               <span class="chevron" aria-hidden="true"></span>
@@ -201,7 +201,7 @@
           </div>
         </div>
 
-        <div class="panel-section">
+        <div class="panel-section" data-panel-section="alignment">
           <div class="section-title">Alignment</div>
           <div class="tool-subsection">
             <button class="subsection-header" type="button" aria-expanded="true">
@@ -257,6 +257,14 @@
         </main>
       </section>
     </div>
+
+
+    <nav class="mobile-tools-bar" aria-label="Mobile tool shortcuts">
+      <button class="mobile-tools-btn" type="button" data-mobile-panel="image-sources">Uploads</button>
+      <button class="mobile-tools-btn" type="button" data-mobile-panel="overlay-tools">Tools</button>
+      <button class="mobile-tools-btn" type="button" data-mobile-panel="alignment">Align</button>
+      <button class="mobile-tools-btn" type="button" data-mobile-panel="analysis">Analyze</button>
+    </nav>
 
     <button id="fabBtn" class="fab" type="button" aria-label="Open tools">+</button>
     <div id="apiBar" class="api-bar" role="region" aria-label="Cloud AI">
