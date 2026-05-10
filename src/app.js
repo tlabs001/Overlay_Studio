@@ -117,6 +117,8 @@ const initializeApp = () => {
   const drawingClearBtn = document.getElementById('drawingClearBtn');
   const referenceOpacity = document.getElementById('referenceOpacity');
   const outlineOpacity = document.getElementById('outlineOpacity');
+  const mobileToolsBar = document.querySelector('.mobile-tools-bar');
+  const mobileToolsButtons = document.querySelectorAll('[data-mobile-panel]');
 
   let cloudEnabled = localStorage.getItem(apiModeKey) === 'true';
   let apiHasKey = false;
@@ -475,6 +477,60 @@ const initializeApp = () => {
 
   if (fabBtn) {
     fabBtn.addEventListener('click', () => toggleToolsPanel());
+  }
+
+  const setMobilePanelSection = (panelKey = null) => {
+    if (!toolsPanel) return;
+    const sections = toolsPanel.querySelectorAll('.panel-section');
+    sections.forEach((section) => {
+      const key = section.dataset.panelSection;
+      if (!key) return;
+      const visible = !panelKey || key === panelKey;
+      section.hidden = !visible;
+    });
+
+    const analysisSubsection = toolsPanel.querySelector('.tool-subsection[data-panel-section="analysis"]');
+    if (analysisSubsection) {
+      const showAnalysis = !panelKey || panelKey === 'analysis';
+      analysisSubsection.hidden = !showAnalysis;
+      if (showAnalysis) {
+        analysisSubsection.classList.remove('collapsed');
+      }
+    }
+
+    mobileToolsButtons.forEach((button) => {
+      const active = panelKey && button.dataset.mobilePanel === panelKey;
+      button.classList.toggle('active', !!active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+  };
+
+  const syncResponsiveToolsLayout = () => {
+    if (window.matchMedia('(max-width: 640px)').matches) return;
+    setMobilePanelSection(null);
+    toggleToolsPanel(true);
+  };
+
+  window.addEventListener('resize', syncResponsiveToolsLayout);
+  syncResponsiveToolsLayout();
+
+  if (mobileToolsBar) {
+    mobileToolsButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const target = button.dataset.mobilePanel;
+        const isOpen = toolsPanel?.classList.contains('open');
+        const isAlreadyActive = button.classList.contains('active');
+
+        if (isOpen && isAlreadyActive) {
+          setMobilePanelSection(null);
+          toggleToolsPanel(false);
+          return;
+        }
+
+        setMobilePanelSection(target);
+        toggleToolsPanel(true);
+      });
+    });
   }
 
   const applyTheme = (theme) => {
