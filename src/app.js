@@ -117,6 +117,7 @@ const initializeApp = () => {
   const drawingClearBtn = document.getElementById('drawingClearBtn');
   const referenceOpacity = document.getElementById('referenceOpacity');
   const outlineOpacity = document.getElementById('outlineOpacity');
+  const workspace = document.querySelector('.workspace');
   const mobileToolsBar = document.querySelector('.mobile-tools-bar');
   const mobileToolsButtons = document.querySelectorAll('[data-mobile-panel]');
 
@@ -473,6 +474,10 @@ const initializeApp = () => {
     if (!toolsPanel) return;
     const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : !toolsPanel.classList.contains('open');
     toolsPanel.classList.toggle('open', shouldOpen);
+
+    if (workspace && !window.matchMedia('(max-width: 640px)').matches) {
+      workspace.classList.toggle('tools-collapsed', !shouldOpen);
+    }
   };
 
   if (fabBtn) {
@@ -506,8 +511,16 @@ const initializeApp = () => {
   };
 
   const syncResponsiveToolsLayout = () => {
-    if (window.matchMedia('(max-width: 640px)').matches) return;
+    if (window.matchMedia('(max-width: 640px)').matches) {
+      if (workspace) workspace.classList.remove('tools-collapsed');
+      return;
+    }
+
     setMobilePanelSection(null);
+    if (workspace?.classList.contains('tools-collapsed')) {
+      toggleToolsPanel(false);
+      return;
+    }
     toggleToolsPanel(true);
   };
 
