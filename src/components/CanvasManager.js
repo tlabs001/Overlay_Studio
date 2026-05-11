@@ -65,6 +65,8 @@ export class CanvasManager {
     this.drawingRotationState = null;
     this.rotationHoverState = null;
     this.rotationHoverTimer = null;
+    this.activeTouchPoints = new Map();
+    this.multiTouchTransformState = null;
     this.cloudAiEnabled = false;
     this.cloudVision = null;
     this.outlineAssistEnabled = false;
@@ -425,11 +427,34 @@ export class CanvasManager {
   }
 
   handleOverlayPointerDown(event) {
+    if (event.pointerType === 'touch') {
+      this.activeTouchPoints.set(event.pointerId, this.getPointerPosition(event));
+    }
     if (this.interactionMode === 'measure') {
       return;
     }
 
     if (this.isPlacingVanishingPoints) return;
+    if (
+      event.pointerType === 'touch' &&
+      this.drawingAdjustmentEnabled &&
+      this.drawingImage &&
+      this.activeTouchPoints.size === 2 &&
+      !this.drawingDragState &&
+      !this.drawingResizeState &&
+      !this.drawingRotationState
+    ) {
+      const points = Array.from(this.activeTouchPoints.values());
+      this.multiTouchTransformState = {
+        pointerIds: Array.from(this.activeTouchPoints.keys()),
+        startDistance: this.computeDistance(points[0], points[1]) || 1,
+        startAngle: Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x),
+        startTransform: { ...this.drawingTransform },
+      };
+      this.canvas.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      return;
+    }
 
     if (this.analysisSelectionMode) {
       const point = this.getPointerPosition(event);
@@ -539,6 +564,24 @@ export class CanvasManager {
   }
 
   handleOverlayPointerMove(event) {
+    if (event.pointerType === 'touch' && this.activeTouchPoints.has(event.pointerId)) {
+      this.activeTouchPoints.set(event.pointerId, this.getPointerPosition(event));
+    }
+    if (this.multiTouchTransformState) {
+      const points = this.multiTouchTransformState.pointerIds.map((id) => this.activeTouchPoints.get(id)).filter(Boolean);
+      if (points.length === 2) {
+        const nextDistance = this.computeDistance(points[0], points[1]) || 1;
+        const nextAngle = Math.atan2(points[1].y - points[0].y, points[1].x - points[0].x);
+        const scaleFactor = Math.max(0.1, Math.min(8, nextDistance / this.multiTouchTransformState.startDistance));
+        const rotationDeltaDeg = ((nextAngle - this.multiTouchTransformState.startAngle) * 180) / Math.PI;
+        this.drawingTransform.scale = Math.max(0.1, Math.min(8, this.multiTouchTransformState.startTransform.scale * scaleFactor));
+        this.drawingTransform.rotationDeg = this.normalizeRotationDegrees((this.multiTouchTransformState.startTransform.rotationDeg || 0) + rotationDeltaDeg);
+        this.render();
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+    }
     if (this.interactionMode === 'measure') {
       return;
     }
@@ -654,6 +697,12 @@ export class CanvasManager {
   }
 
   handleOverlayPointerUp(event) {
+    if (event.pointerType === 'touch') {
+      this.activeTouchPoints.delete(event.pointerId);
+      if (this.multiTouchTransformState && this.activeTouchPoints.size < 2) {
+        this.multiTouchTransformState = null;
+      }
+    }
     if (this.interactionMode === 'measure') {
       return;
     }
@@ -1560,6 +1609,24 @@ export class CanvasManager {
       rotationDeg: this.drawingTransform.rotationDeg || 0,
     };
     this.render();
+  }
+
+  getAutoAlignContentSimilarity() {
+    if (!this.referenceImage || !this.drawingImage) return { mostlySimilar: false, score: 0 };
+    const referenceContent = this.getContentBounds(this.referenceImage);
+    const drawingContent = this.getContentBounds(this.drawingImage);
+    const refDims = this.getImageDimensions(this.referenceImage);
+    const drawDims = this.getImageDimensions(this.drawingImage);
+    if (!referenceContent || !drawingContent || !refDims.width || !drawDims.width) {
+      return { mostlySimilar: false, score: 0 };
+    }
+    const refW = referenceContent.width / refDims.width;
+    const refH = referenceContent.height / refDims.height;
+    const drawW = drawingContent.width / drawDims.width;
+    const drawH = drawingContent.height / drawDims.height;
+    const sizeDelta = Math.abs(refW - drawW) + Math.abs(refH - drawH);
+    const score = Math.max(0, 1 - sizeDelta);
+    return { mostlySimilar: score > 0.9, score };
   }
 
   nudgeDrawing(dx = 0, dy = 0) {
