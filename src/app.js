@@ -376,10 +376,10 @@ const initializeApp = () => {
   const updateDifferenceSummary = (score = null) => {
     if (!differenceSummary) return;
     if (score === null || Number.isNaN(score)) {
-      differenceSummary.textContent = 'Load both images to analyze differences.';
+      differenceSummary.textContent = 'Load both images to review pixel differences.';
       return;
     }
-    differenceSummary.textContent = `Average difference: ${score.toFixed(1)}% pixel variance`;
+    differenceSummary.textContent = `Pixel review: ${score.toFixed(1)}% average variance`;
   };
 
   const handleImageUpload = async (file, target = 'reference') => {
@@ -490,7 +490,7 @@ const initializeApp = () => {
     sections.forEach((section) => {
       const key = section.dataset.panelSection;
       if (!key) return;
-      const visible = !panelKey || key === panelKey;
+      const visible = !panelKey || key === panelKey || (panelKey === 'analysis' && key === 'overlay-tools');
       section.hidden = !visible;
     });
 

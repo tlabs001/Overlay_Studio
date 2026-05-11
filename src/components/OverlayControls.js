@@ -259,9 +259,7 @@ export class OverlayControls {
   }
 
   closePanel() {
-    if (this.container?.classList.contains('open')) {
-      this.container.classList.remove('open');
-    }
+    // Keep tabs/panels open after tool actions, especially on mobile.
   }
 
   async toImageBitmap(imageSource) {
@@ -1180,6 +1178,11 @@ export class OverlayControls {
     const drawingBitmap = await this.toImageBitmap(this.canvasManager.drawingImage);
     const refDimensions = this.canvasManager.getImageDimensions(this.canvasManager.referenceImage);
     const drawingDimensions = this.canvasManager.getImageDimensions(this.canvasManager.drawingImage);
+    const contentSimilarity = this.canvasManager.getAutoAlignContentSimilarity?.();
+    if (contentSimilarity?.mostlySimilar) {
+      this.canvasManager.autoAlignDrawing({ preferLandmarks: false });
+      return;
+    }
 
     try {
       const { refPoints, drawPoints } = await landmarkDetector.detectFacePairs(referenceBitmap, drawingBitmap, {
