@@ -65,7 +65,7 @@ export class CritiqueTool {
     this.ctx.restore();
   }
 
-  renderGhostCorrections(indexPairs = []) {
+  renderComparisonGuides(indexPairs = []) {
     if (!this.ctx) return;
     this.ctx.save();
     this.ctx.lineWidth = 2;

@@ -542,7 +542,7 @@ body.light .tools-panel {
 }
 
 .primary-btn,
-.ghost-btn {
+.pixel-review-btn {
   flex: 1;
   border-radius: 12px;
   padding: 12px 10px;
@@ -556,7 +556,7 @@ body.light .tools-panel {
   color: #fff;
 }
 
-.ghost-btn {
+.pixel-review-btn {
   background: transparent;
   border: 1px solid var(--border-subtle);
   color: var(--fg);
@@ -787,7 +787,7 @@ body.light .tools-panel {
 }
 
 .primary-btn:focus-visible,
-.ghost-btn:focus-visible {
+.pixel-review-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -869,4 +869,3 @@ body.light .tools-panel {
     display: none;
   }
 }
-

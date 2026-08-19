@@ -14,9 +14,9 @@ This tool empowers artists with overlays, proportion feedback, landmark detectio
 ✅ Point placement for measuring angles, distances, ratios  
 ✅ Base unit comparison system (e.g., eye width = 1.0)  
 ✅ Triangulation lines and construction aids  
-✅ Negative space and shape simplification views  
+✅ Negative space view
 ✅ Perspective and gesture grid overlays  
-✅ Ghost correction + landmark deviation visualizer  
+✅ Landmark deviation visualizer
 ✅ Memory & training modes  
 ✅ Export: PNG, time-lapse, session JSON  
 ✅ PWA support (installable as a mobile app)  
@@ -162,7 +162,9 @@ When prompted:
 
 ## 📄 License
 
-MIT — free to use, modify, and build upon.
+Copyright © 2025–2026 T LABS LLC. All rights reserved.
+
+This is proprietary software, not free or open-source software. Only T LABS LLC and customers or users expressly authorized by T LABS LLC may access or use it, and only under the terms supplied by T LABS LLC. Copying, modification, redistribution, resale, sublicensing, or any other use is prohibited without prior written permission. See [LICENSE](LICENSE) for the complete terms.
 
 🗺️ Roadmap Format (GitHub Issues or Project Board)
 You can create these as GitHub Issues with labels and milestones, or use GitHub Projects (beta) with drag-and-drop columns.
@@ -182,7 +184,6 @@ Here’s your roadmap:
 | Feature | Status |
 | --- | --- |
 | Negative space toggle | Prompted |
-| Shape simplification | Prompted |
 | Posterization planes | Prompted |
 | Triangulation tools | Prompted |
 | Gesture + manual lines | Prompted |
@@ -193,7 +194,6 @@ Here’s your roadmap:
 | MediaPipe Pose + Face detection | Not started |
 | Auto landmark comparison | Planned |
 | Critique mode scoring | Planned |
-| Ghost correction overlays | Prompted |
 
 ### 🚧 Milestone 4: Export, Sharing, Persistence
 | Feature | Status |

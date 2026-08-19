@@ -21,7 +21,6 @@ export class OverlayControls {
       measureBtn: document.getElementById('measureTool'),
       gridBtn: document.getElementById('gridTool'),
       sightSizeGridBtn: document.getElementById('sightSizeGridTool'),
-      ghostBtn: document.getElementById('ghostTool'),
       analysisSelectBtn: document.getElementById('analysisSelectTool'),
       clearAnalysisBtn: document.getElementById('clearAnalysisTool'),
       faceBtn: document.getElementById('faceTool'),
@@ -52,7 +51,6 @@ export class OverlayControls {
       threePointBtn: document.getElementById('threePointTool'),
       clearPerspectiveBtn: document.getElementById('clearPerspectiveTool'),
       negativeSpaceBtn: document.getElementById('negativeSpaceTool'),
-      simplifyShapesBtn: document.getElementById('simplifyShapesTool'),
       trainingModeBtn: document.getElementById('trainingModeTool'),
       brushBtn: document.getElementById('brushToolButton'),
       eraserBtn: document.getElementById('eraserToolButton'),
@@ -254,7 +252,7 @@ export class OverlayControls {
       drawingPoints
     );
     this.critiqueTool.runSegmentCritique(indexPairs);
-    this.critiqueTool.renderGhostCorrections(indexPairs);
+    this.critiqueTool.renderComparisonGuides(indexPairs);
     this.updateCritiqueSummary(this.critiqueTool.getSummary());
   }
 
@@ -356,7 +354,6 @@ export class OverlayControls {
       measureBtn,
       gridBtn,
       sightSizeGridBtn,
-      ghostBtn,
       analysisSelectBtn,
       clearAnalysisBtn,
       faceBtn,
@@ -387,7 +384,6 @@ export class OverlayControls {
       threePointBtn,
       clearPerspectiveBtn,
       negativeSpaceBtn,
-      simplifyShapesBtn,
       trainingModeBtn,
       brushBtn,
       eraserBtn,
@@ -426,7 +422,6 @@ export class OverlayControls {
     const syncUIFromState = () => {
       const interactionMode = this.canvasManager?.interactionMode || 'none';
       const traceEnabled = !!this.canvasManager?.traceModeEnabled;
-      const ghostEnabled = !!this.canvasManager?.ghostModeEnabled;
 
       if (measureBtn) {
         const measureActive = interactionMode === 'measure';
@@ -453,10 +448,6 @@ export class OverlayControls {
         traceBtn.classList.toggle('active', traceEnabled);
       }
 
-      if (ghostBtn) {
-        ghostBtn.textContent = ghostEnabled ? 'Ghost (On)' : 'Ghost';
-        ghostBtn.classList.toggle('active', ghostEnabled);
-      }
     };
 
     const updateOutlineAssistReadout = () => {
@@ -690,14 +681,6 @@ export class OverlayControls {
         const baseUnit = this.measurementTool?.getBaseDistance?.();
         this.canvasManager.drawSightSizeGrid(baseUnit || null, divisions);
         sightSizeGridBtn.textContent = 'Base Unit Grid (On)';
-      });
-    }
-
-    if (ghostBtn) {
-      ghostBtn.addEventListener('click', () => {
-        this.canvasManager.toggleGhostMode();
-        syncUIFromState();
-        this.closePanel();
       });
     }
 
@@ -970,19 +953,6 @@ export class OverlayControls {
         } else {
           this.canvasManager.renderNegativeSpace(this.canvasManager.referenceImage);
           negativeSpaceBtn.textContent = 'Negative Space (On)';
-        }
-        this.closePanel();
-      });
-    }
-
-    if (simplifyShapesBtn) {
-      simplifyShapesBtn.addEventListener('click', () => {
-        if (this.canvasManager.simplifiedPlanesEnabled) {
-          this.canvasManager.clearSimplifiedPlanes();
-          simplifyShapesBtn.textContent = 'Simplify Shapes';
-        } else {
-          this.canvasManager.renderSimplifiedPlanes(this.canvasManager.referenceImage, 4);
-          simplifyShapesBtn.textContent = 'Simplify Shapes (On)';
         }
         this.closePanel();
       });
