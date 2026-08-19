@@ -1,4 +1,4 @@
-import { createOutline, simplifyEdges, posterizeImage } from '../utils/edgeDetection.js';
+import { createOutline, simplifyEdges } from '../utils/edgeDetection.js';
 
 export class CanvasManager {
   constructor(canvas) {
@@ -8,7 +8,6 @@ export class CanvasManager {
     this.negativeSpaceEnabled = false;
     this.simplifiedViewEnabled = false;
     this.posterizedViewEnabled = false;
-    this.simplifiedPlanesEnabled = false;
     this.posterizeLevels = 3;
     this.referenceImage = null;
     this.drawingImage = null;
@@ -31,7 +30,6 @@ export class CanvasManager {
     this.perspectiveGrid = [];
     this.vanishingPoints = [];
     this.isPlacingVanishingPoints = false;
-    this.ghostModeEnabled = false;
     this.critiqueModeEnabled = false;
     this.traceModeEnabled = false;
     this.traceOpacity = 0.4;
@@ -53,7 +51,6 @@ export class CanvasManager {
     this.perspectiveLayer = null;
     this.maskLayer = null;
     this.negativeSpaceLayer = null;
-    this.simplifiedPlanesLayer = null;
     this.trainingModeEnabled = false;
     this.sightSizeGridDivisions = 8;
     this.lastReferenceBounds = null;
@@ -286,11 +283,6 @@ export class CanvasManager {
         segmentationMask: drawingSegmentation,
       },
     };
-    this.render();
-  }
-
-  toggleGhostMode() {
-    this.ghostModeEnabled = !this.ghostModeEnabled;
     this.render();
   }
 
@@ -1135,7 +1127,6 @@ export class CanvasManager {
     this.trainingModeEnabled = !this.trainingModeEnabled;
     if (this.trainingModeEnabled) {
       if (this.referenceImage) {
-        this.renderSimplifiedPlanes(this.referenceImage, 4);
         this.renderNegativeSpace(this.referenceImage);
       }
       this.startPerspectiveMode('1p');
@@ -1150,7 +1141,6 @@ export class CanvasManager {
       this.resetToNormalRender();
       this.clearPerspectiveGrid();
       this.clearNegativeSpace();
-      this.clearSimplifiedPlanes();
     }
     this.render();
     return this.trainingModeEnabled;
@@ -1169,39 +1159,6 @@ export class CanvasManager {
     }
 
     return new ImageData(data, imageData.width, imageData.height);
-  }
-
-  renderSimplifiedPlanes(image = this.referenceImage, levels = 4) {
-    if (!image || !this.canvas) return;
-    const rect = this.getDrawRect(image);
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = rect.width;
-    tempCanvas.height = rect.height;
-    const tctx = tempCanvas.getContext('2d');
-    tctx.drawImage(image, 0, 0, rect.width, rect.height);
-    const data = tctx.getImageData(0, 0, rect.width, rect.height);
-    const posterized = posterizeImage(data, levels);
-
-    const tinted = new Uint8ClampedArray(posterized.data);
-    for (let i = 0; i < tinted.length; i += 4) {
-      const value = tinted[i];
-      const warmShift = value > 170 ? 10 : 0;
-      const coolShift = value < 90 ? -10 : 0;
-      tinted[i] = Math.min(255, value + warmShift);
-      tinted[i + 1] = value;
-      tinted[i + 2] = Math.max(0, value + coolShift);
-    }
-
-    tctx.putImageData(new ImageData(tinted, rect.width, rect.height), 0, 0);
-    this.simplifiedPlanesLayer = { canvas: tempCanvas, rect, levels };
-    this.simplifiedPlanesEnabled = true;
-    this.render();
-  }
-
-  clearSimplifiedPlanes() {
-    this.simplifiedPlanesLayer = null;
-    this.simplifiedPlanesEnabled = false;
-    this.render();
   }
 
   clearDifferenceLayer() {
@@ -1816,7 +1773,6 @@ export class CanvasManager {
 
   getState() {
     return {
-      ghostModeEnabled: this.ghostModeEnabled,
       critiqueModeEnabled: this.critiqueModeEnabled,
       sightSizeGridVisible: this.sightSizeGridVisible,
       sightSizeBaseUnit: this.sightSizeBaseUnit,
@@ -1841,7 +1797,6 @@ export class CanvasManager {
   }
 
   applyState(state = {}) {
-    this.ghostModeEnabled = !!state.ghostModeEnabled;
     this.critiqueModeEnabled = !!state.critiqueModeEnabled;
     this.sightSizeGridVisible = !!state.sightSizeGridVisible;
     this.sightSizeBaseUnit = state.sightSizeBaseUnit || null;
@@ -3118,36 +3073,6 @@ export class CanvasManager {
     this.ctx.restore();
   }
 
-  drawGhostCorrections(rect) {
-    if (!this.ghostModeEnabled || !this.landmarkResults) return;
-    const { reference, drawing } = this.landmarkResults;
-    const referencePoints = reference?.points || [];
-    const drawingPoints = drawing?.points || [];
-    const dimensionsRef = reference?.dimensions || {};
-    const dimensionsDraw = drawing?.dimensions || {};
-    const count = Math.min(referencePoints.length, drawingPoints.length);
-    if (!count) return;
-
-    this.ctx.save();
-    this.ctx.strokeStyle = 'rgba(128, 0, 128, 0.6)';
-    this.ctx.lineWidth = 2;
-    this.ctx.setLineDash([6, 6]);
-    for (let i = 0; i < count; i += 1) {
-      const refPoint = this.projectPoint(referencePoints[i], rect, dimensionsRef);
-      const drawPoint = this.projectPoint(drawingPoints[i], rect, dimensionsDraw);
-      const dx = drawPoint.x - refPoint.x;
-      const dy = drawPoint.y - refPoint.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance > 20) {
-        this.ctx.beginPath();
-        this.ctx.moveTo(drawPoint.x, drawPoint.y);
-        this.ctx.lineTo(refPoint.x, refPoint.y);
-        this.ctx.stroke();
-      }
-    }
-    this.ctx.restore();
-  }
-
   drawCritiqueOverlay(rect) {
     if (!this.critiqueModeEnabled || !this.landmarkScore) return;
     const { averageError, topInaccurate } = this.landmarkScore;
@@ -3234,13 +3159,9 @@ export class CanvasManager {
     const drawingRect = this.getDrawingRect(this.drawingImage);
     this.lastReferenceBounds = this.referenceImage ? rect : null;
     this.lastDrawingBounds = drawingRect;
-    const simplifiedRect = this.simplifiedPlanesLayer?.rect || rect;
-    const layer =
-      this.simplifiedPlanesEnabled && this.simplifiedPlanesLayer
-        ? this.simplifiedPlanesLayer.canvas
-        : this.referenceImage
-          ? this.getActiveLayer(rect)
-          : this.createLayerFromImage(baseImage, rect);
+    const layer = this.referenceImage
+      ? this.getActiveLayer(rect)
+      : this.createLayerFromImage(baseImage, rect);
     const maskLayer = this.referenceImage
       ? this.createLayerFromImage(this.referenceImage, rect)
       : null;
@@ -3257,7 +3178,7 @@ export class CanvasManager {
     if (this.negativeSpaceEnabled && this.negativeSpaceLayer) {
       this.ctx.save();
       this.ctx.globalAlpha = 0.35 * baseAlpha;
-      this.ctx.drawImage(layer, simplifiedRect.x, simplifiedRect.y, simplifiedRect.width, simplifiedRect.height);
+      this.ctx.drawImage(layer, rect.x, rect.y, rect.width, rect.height);
       this.ctx.restore();
       this.ctx.drawImage(
         this.negativeSpaceLayer.canvas,
@@ -3268,7 +3189,7 @@ export class CanvasManager {
       this.ctx.save();
       const baseLayerAlpha = this.referenceImage ? this.referenceOpacity : 1;
       this.ctx.globalAlpha = baseAlpha * baseLayerAlpha;
-      this.ctx.drawImage(layer, simplifiedRect.x, simplifiedRect.y, simplifiedRect.width, simplifiedRect.height);
+      this.ctx.drawImage(layer, rect.x, rect.y, rect.width, rect.height);
       this.ctx.restore();
     }
 
@@ -3280,11 +3201,6 @@ export class CanvasManager {
       this.ctx.translate(centerX, centerY);
       this.ctx.rotate(((this.drawingTransform.rotationDeg || 0) * Math.PI) / 180);
       this.ctx.drawImage(drawingLayer, -drawingRect.width / 2, -drawingRect.height / 2, drawingRect.width, drawingRect.height);
-      if (this.ghostModeEnabled) {
-        this.ctx.globalCompositeOperation = 'source-atop';
-        this.ctx.fillStyle = this.overlayColor;
-        this.ctx.fillRect(-drawingRect.width / 2, -drawingRect.height / 2, drawingRect.width, drawingRect.height);
-      }
       this.ctx.restore();
     }
 
@@ -3315,7 +3231,6 @@ export class CanvasManager {
     this.drawGestureLine(rect);
     this.drawLandmarkComparisons(rect);
     this.drawDetectedLandmarks();
-    this.drawGhostCorrections(rect);
     this.drawCritiqueOverlay(rect);
     this.drawTraceStrokes();
     this.drawAssistMask();
